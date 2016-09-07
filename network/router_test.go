@@ -181,10 +181,10 @@ func newNSquareProc(t *testing.T, r *Router, expect int, wg *sync.WaitGroup) *nS
 }
 
 func (p *nSquareProc) Process(pack *Packet) {
+	log.Print(p.r.id, p.actual, p.expected)
 	p.Lock()
 	defer p.Unlock()
 	p.actual++
-	log.Print(p.r.id, p.actual, p.expected)
 	if p.actual == p.expected {
 		// release
 		log.Print(p.r.id, "done")
@@ -245,9 +245,10 @@ func testRouterLotsOfConn(t *testing.T, fac routerFactory) {
 				if err := r.Send(routers[k].id, &SimpleMessage{0}); err != nil {
 					t.Fatal(err)
 				}
+				time.Sleep(time.Second)
 			}
 		}(i)
-		time.Sleep(time.Second)
+		time.Sleep(time.Duration(nbrRouter) * time.Second)
 	}
 	wg2.Wait()
 	log.Lvl1("Finished sending messages")
