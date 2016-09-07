@@ -334,12 +334,13 @@ func (r *Router) negotiateOpen(si *ServerIdentity, c Conn) error {
 
 func exchangeServerIdentity(own *ServerIdentity, c Conn) (*ServerIdentity, error) {
 	// Send our ServerIdentity to the remote endpoint
-	log.Lvl4(own.Address, "Sending our identity to", c.Remote())
+	log.LLvl4(own.Address, "Sending our identity to", c.Remote())
 	if err := c.Send(context.TODO(), own); err != nil {
 		return nil, fmt.Errorf("Error while sending out identity during negotiation:%s", err)
 	}
 	// Receive the other ServerIdentity
 	nm, err := c.Receive(context.TODO())
+	log.LLvl4(own.Address, "Received identity from", c.Remote())
 	if err != nil {
 		return nil, fmt.Errorf("Error while receiving ServerIdentity during negotiation %s", err)
 	}
@@ -350,7 +351,7 @@ func exchangeServerIdentity(own *ServerIdentity, c Conn) (*ServerIdentity, error
 
 	// Set the ServerIdentity for this connection
 	e := nm.Msg.(ServerIdentity)
-	log.Lvl4(own.Address, "Identity exchange complete with ", e.Address)
+	log.LLvl4(own.Address, "Identity exchange complete with", e.Address)
 	return &e, nil
 
 }

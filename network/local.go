@@ -3,10 +3,13 @@ package network
 import (
 	"errors"
 	"fmt"
-	"golang.org/x/net/context"
 	"reflect"
 	"sync"
 	"time"
+
+	"github.com/dedis/cothority/log"
+
+	"golang.org/x/net/context"
 )
 
 // NewLocalRouter returns a fresh router which uses local connections. It takes
@@ -251,49 +254,41 @@ func (cc *LocalConn) Type() ConnType {
 }
 
 type connQueue struct {
-	*sync.Cond
-	queue    []Packet
+	sync.Mutex
+	queue    chan Packet
 	isClosed bool
 }
 
 func newConnQueue() *connQueue {
 	return &connQueue{
-		Cond: sync.NewCond(&sync.Mutex{}),
+		queue: make(chan Packet, 128),
 	}
 }
 
 func (c *connQueue) Push(p Packet) {
-	c.L.Lock()
-	defer c.L.Unlock()
-	if c.isClosed {
-		return
-	}
-	c.queue = append(c.queue, p)
-	c.Signal()
+	c.queue <- p
 }
 
 func (c *connQueue) Pop() (Packet, error) {
-	c.L.Lock()
-	defer c.L.Unlock()
-	for len(c.queue) == 0 {
-		if c.isClosed {
-			return EmptyApplicationPacket, ErrClosed
-		}
-		c.Wait()
-	}
+	c.Lock()
 	if c.isClosed {
 		return EmptyApplicationPacket, ErrClosed
 	}
-	nm := c.queue[0]
-	c.queue = c.queue[1:]
-	return nm, nil
+	c.Unlock()
+	msg, valid := <-c.queue
+	if !valid {
+		return EmptyApplicationPacket, ErrClosed
+	}
+	return msg, nil
 }
 
 func (c *connQueue) Close() {
-	c.L.Lock()
-	defer c.L.Unlock()
-	c.isClosed = true
-	c.Signal()
+	c.Lock()
+	defer c.Unlock()
+	if !c.isClosed {
+		c.isClosed = true
+		close(c.queue)
+	}
 }
 
 // LocalListener is a Listener that uses LocalConn to communicate. It tries to
@@ -358,11 +353,15 @@ func (ll *LocalListener) Listen(fn func(Conn)) error {
 func (ll *LocalListener) Stop() error {
 	ll.Lock()
 	defer ll.Unlock()
+	log.Print("Stopping to listen")
 	ll.ctx.StopListening(ll.addr)
 	if ll.listening {
+		log.Print("Stopping to listen")
 		close(ll.quit)
 	}
+	log.Print("Stopping to listen")
 	ll.listening = false
+	log.Print("Stopping to listen")
 	return nil
 }
 

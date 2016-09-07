@@ -173,29 +173,38 @@ type nSquareProc struct {
 	expected int
 	actual   int
 	wg       *sync.WaitGroup
+	sync.Mutex
 }
 
 func newNSquareProc(t *testing.T, r *Router, expect int, wg *sync.WaitGroup) *nSquareProc {
-	return &nSquareProc{t, r, expect, 0, wg}
+	return &nSquareProc{t, r, expect, 0, wg, sync.Mutex{}}
 }
 
 func (p *nSquareProc) Process(pack *Packet) {
+	p.Lock()
+	defer p.Unlock()
 	p.actual++
+	log.Print(p.r.id, p.actual, p.expected)
 	if p.actual == p.expected {
 		// release
+		log.Print(p.r.id, "done")
 		p.wg.Done()
 		return
 	} else if p.actual > p.expected {
-		p.t.Fatal("Too many response ??")
+		log.Fatal("Too many responses")
 	}
 	msg := pack.Msg.(SimpleMessage)
-	p.r.Send(pack.ServerIdentity, &msg)
+	// Only send message back if it's the first one.
+	log.Print(p.r.id, msg.I)
+	if msg.I == 0 {
+		log.Print(p.r.id, "sending to", pack.ServerIdentity)
+		p.r.Send(pack.ServerIdentity, &SimpleMessage{1})
+	}
 }
 
 // Makes a big mesh where every host send and receive to every other hosts
 func testRouterLotsOfConn(t *testing.T, fac routerFactory) {
-	log.TestOutput(true, 2)
-	nbrRouter := 2
+	nbrRouter := 3
 	// create all the routers
 	routers := make([]*Router, nbrRouter)
 	var wg1 sync.WaitGroup
@@ -208,6 +217,7 @@ func testRouterLotsOfConn(t *testing.T, fac routerFactory) {
 			}
 			go r.Start()
 			for !r.Listening() {
+				log.Lvl2("Waiting for listening")
 				time.Sleep(20 * time.Millisecond)
 			}
 			routers[j] = r
@@ -215,6 +225,7 @@ func testRouterLotsOfConn(t *testing.T, fac routerFactory) {
 		}(i)
 	}
 	wg1.Wait()
+	log.Lvl1("Done adding routers")
 
 	var wg2 sync.WaitGroup
 	wg2.Add(nbrRouter)
@@ -222,7 +233,7 @@ func testRouterLotsOfConn(t *testing.T, fac routerFactory) {
 		go func(j int) {
 			r := routers[j]
 			// expect nbrRouter - 1 messages
-			proc := newNSquareProc(t, r, nbrRouter-1, &wg2)
+			proc := newNSquareProc(t, r, (nbrRouter-1)*2, &wg2)
 			r.RegisterProcessor(proc, SimpleMessageType)
 			for k := 0; k < nbrRouter; k++ {
 				if k == j {
@@ -230,20 +241,29 @@ func testRouterLotsOfConn(t *testing.T, fac routerFactory) {
 					continue
 				}
 				// send to everyone else
-				if err := r.Send(routers[k].id, &SimpleMessage{3}); err != nil {
+				log.Print("Sending", r.id, routers[k].id)
+				if err := r.Send(routers[k].id, &SimpleMessage{0}); err != nil {
 					t.Fatal(err)
 				}
 			}
 		}(i)
+		time.Sleep(time.Second)
 	}
 	wg2.Wait()
+	log.Lvl1("Finished sending messages")
+	time.Sleep(time.Second)
+
 	for i := 0; i < nbrRouter; i++ {
 		r := routers[i]
+		log.Lvl1("Stopping router", i)
 		if err := r.Stop(); err != nil {
+			log.Print("Fataling out")
 			t.Fatal(err)
 		}
+		log.Print("Router", i, "stopped")
 
 	}
+	log.Lvl1("Closed all routers")
 }
 
 // Test sending data back and forth using the sendSDAData
