@@ -79,14 +79,14 @@ func (jv *JVSS_SETUP) handleSecConf(m WSecConfMsg) error {
 
 	// Check if we are the initiator node and have enough confirmations to proceed
 	if secret.numLongtermConfs == len(jv.List()) && jv.sharedSecretLongTerm != nil {
-		log.Lvlf2("Node %d: got all confirmations, last from %d", jv.Index(),
+		log.Lvlf4("Node %d: got all confirmations, last from %d", jv.Index(),
 			m.RosterIndex)
 		log.Lvl4("Writing to longTermSecDone")
 		jv.longTermSecDone <- true
 		secret.numLongtermConfs = 0
 	} else {
 		n := secret.numLongtermConfs
-		log.Lvlf2("Node %d: confirmations %d/%d, last from %d", jv.Index(),
+		log.Lvlf4("Node %d: confirmations %d/%d, last from %d", jv.Index(),
 			n, len(jv.List()),m.RosterIndex)
 	}
 

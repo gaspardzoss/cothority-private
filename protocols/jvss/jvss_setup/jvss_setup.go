@@ -69,7 +69,7 @@ func NewJVSS_setup(node *sda.TreeNodeInstance, secretChan chan *poly.SharedSecre
 // Start initiates the JVSS protocol by setting up a long-term shared secret
 // which can be used later on by the JVSS group to sign and verify messages.
 func (jv *JVSS_SETUP) Start() error {
-	log.Lvl2(jv.Name(), "index", jv.Index(), " Starts()")
+	log.Lvl4(jv.Name(), "index", jv.Index(), " Starts()")
 	err := jv.initSecret()
 	if err != nil {
 		log.Error(err)
@@ -141,7 +141,7 @@ func (jv *JVSS_SETUP) finaliseSecret() error {
 		defer secret.nLongConfirmsMtx.Unlock()
 		secret.numLongtermConfs++
 
-		log.Lvlf2("Node %d: longterm created", jv.Index())
+		log.Lvlf4("Node %d: longterm created", jv.Index())
 		// TODO check if best place to send it.
 		jv.sharedSecretLongTermChan <- jv.sharedSecretLongTerm.secret
 		// Broadcast that we have finished setting up our shared secret

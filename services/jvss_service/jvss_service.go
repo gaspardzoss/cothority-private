@@ -8,6 +8,7 @@ import (
 	"errors"
 	"github.com/dedis/cothority/log"
 	"github.com/dedis/cothority/network"
+	"encoding/hex"
 )
 
 // ServiceName can be used to refer to the name of this service
@@ -33,11 +34,10 @@ type Service struct {
 
 func (s *Service) SignatureRequest(e *network.ServerIdentity, req *SignatureRequest) (network.Body,error){
 	tree := req.Roster.GenerateBinaryTree()
-	pi, err := s.CreateProtocolService(JVSS_ROUND, tree)
+	pi, err := s.CreateProtocolSDA(JVSS_ROUND, tree)
 	if err != nil {
 		return nil,errors.New("Couldn't create new node: " + err.Error())
 	}
-
 	// Register the function generating the protocol instance
 	root := pi.(*jvss_round.JVSS_ROUND)
 	sig, err := root.Sign(req.Message)
@@ -46,7 +46,7 @@ func (s *Service) SignatureRequest(e *network.ServerIdentity, req *SignatureRequ
 
 func (s *Service) SetupRequest(e *network.ServerIdentity, req *SetupRequest)  (network.Body,error){
 	tree := req.Roster.GenerateBinaryTree()
-	pi, err := s.CreateProtocolService(JVSS_SETUP,tree)
+	pi, err := s.CreateProtocolSDA(JVSS_SETUP,tree)
 	if err != nil {
 		return nil,errors.New("Couldn't create new node: " + err.Error())
 	}
@@ -57,20 +57,20 @@ func (s *Service) SetupRequest(e *network.ServerIdentity, req *SetupRequest)  (n
 
 
 func (s *Service) NewProtocol(tn *sda.TreeNodeInstance, conf *sda.GenericConfig) (sda.ProtocolInstance, error) {
-	switch tn.ProtocolName() {
-	case JVSS_SETUP:
-		pi, err := jvss_setup.NewJVSS_setup(tn,s.sharedSecretchan)
-		if err != nil {
-			return nil, err
-		}
-		return pi,err
-	case JVSS_ROUND:
-		pi, err := jvss_round.NewJVSS_round(tn,s.secret)
-		if err != nil {
-			return nil, err
-		}
-		return pi,err
-	}
+	//switch tn.ProtocolName() {
+	//case JVSS_SETUP:
+	//	pi, err := jvss_setup.NewJVSS_setup(tn,s.sharedSecretchan)
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//	return pi,err
+	//case JVSS_ROUND:
+	//	pi, err := jvss_round.NewJVSS_round(tn,s.secret)
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//	return pi,err
+	//}
 	return nil, nil
 }
 
@@ -83,14 +83,15 @@ func newJVSSService(c *sda.Context, path string) sda.Service {
 
 	go func() {
 		s.secret = <- s.sharedSecretchan
-		log.Lvl2("received secret")
+		b, _ := (*s.secret.Share).MarshalBinary()
+		log.Lvl2("received secret: " + hex.EncodeToString(b))
 	}()
 
 	c.ProtocolRegister(JVSS_SETUP,func(n *sda.TreeNodeInstance) (sda.ProtocolInstance, error) {
-		return jvss_setup.NewJVSS_setup(n,nil)
+		return jvss_setup.NewJVSS_setup(n,s.sharedSecretchan)
 	})
 	c.ProtocolRegister(JVSS_ROUND,func(n *sda.TreeNodeInstance) (sda.ProtocolInstance, error) {
-		return jvss_round.NewJVSS_round(n,nil)
+		return jvss_round.NewJVSS_round(n,s.secret)
 	})
 
 	if err := s.RegisterMessages(s.SetupRequest, s.SignatureRequest); err != nil {

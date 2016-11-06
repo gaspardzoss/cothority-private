@@ -12,6 +12,7 @@ import (
 	"github.com/dedis/cothority/log"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 )
 
 // SID is the type of shared secret identifiers
@@ -71,8 +72,9 @@ func NewJVSS_round(node *sda.TreeNodeInstance, longterm *poly.SharedSecret) (sda
 	}
 
 	jv.schnorr.Init(jv.keyPair.Suite, jv.info, longterm)
-	log.Lvlf4("Node %d: Schnorr struct initialised",
-		jv.Index())
+	b, _ := (*longterm.Share).MarshalBinary()
+	log.Lvlf2("Node %d: Schnorr struct initialised with secret %s",
+		jv.Index(), hex.EncodeToString(b))
 
 
 	// Setup message handlers
