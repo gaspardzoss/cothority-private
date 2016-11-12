@@ -21,14 +21,15 @@ func TestJVSSService(t *testing.T) {
 	local := sda.NewLocalTest()
 	// generate 5 hosts, they don't connect, they process messages, and they
 	// don't register the tree or entitylist
-	_, el, _ := local.GenTree(5, true)
+	_, el, _ := local.GenTree(5, false)
 	defer local.CloseAll()
 
 	// Send a request to the service
 	client := NewTestClient(local)
-	log.Lvl1("Sending request to service...")
+	log.Lvl1("Sending setup request to service...")
 	err := client.Setup(el)
 	log.ErrFatal(err, "Couldn't send")
+	log.Lvl1("Sending sign request to service...")
 	sig, err := client.Sign(el,msg)
 	if sig != nil {
 		log.Lvl1("Generated a sig")

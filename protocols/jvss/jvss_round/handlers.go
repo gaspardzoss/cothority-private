@@ -1,12 +1,47 @@
 package jvss_round
 
 import (
-	"strings"
-
 	"github.com/dedis/cothority/log"
 	"github.com/dedis/cothority/sda"
 	"github.com/sriak/crypto/poly"
+	"encoding/hex"
 )
+
+type LongtermInit struct {
+	Src int
+}
+
+type LongtermDone struct{}
+
+type WlongtermInit struct {
+	*sda.TreeNode
+	LongtermInit
+}
+
+type WlongtermDone struct {
+	*sda.TreeNode
+	LongtermDone
+}
+
+func (jv *JVSS_ROUND) handleLongtermInit(m WlongtermInit) error {
+	msg := m.LongtermInit
+	jv.schnorr.Init(jv.keyPair.Suite, jv.info, jv.longtermSecret)
+	b, _ := (*jv.longtermSecret.Share).MarshalBinary()
+	log.Lvlf2("Node %d: Schnorr struct initialised with secret %s",
+		jv.Index(), hex.EncodeToString(b))
+	jv.SendTo(jv.List()[msg.Src], &LongtermDone{})
+	return nil
+}
+
+func (jv *JVSS_ROUND) handleLongtermDone(m WlongtermDone) error {
+	jv.longtermDoneNum++
+	// We are only waiting for answers of all other nodes
+	if ( jv.longtermDoneNum == len(jv.List()) - 1) {
+		jv.longtermChan <- true
+		log.Lvl1("Sent to chan")
+	}
+	return nil
+}
 
 // SecInitMsg are used to initialise new shared secrets both long- and
 // short-term.
@@ -36,6 +71,8 @@ type SigRespMsg struct {
 	SID SID
 	Sig *poly.SchnorrPartialSig
 }
+
+
 
 // WSecInitMsg is a SDA-wrapper around SecInitMsg.
 type WSecInitMsg struct {
@@ -101,27 +138,17 @@ func (jv *JVSS_ROUND) handleSecConf(m WSecConfMsg) error {
 		return nil
 	}
 
-	isShortTermSecret := strings.HasPrefix(string(msg.SID), string(STSS))
-	if isShortTermSecret {
-		secret.nShortConfirmsMtx.Lock()
-		defer secret.nShortConfirmsMtx.Unlock()
-		secret.numShortConfs++
-	} else {
-		secret.nLongConfirmsMtx.Lock()
-		defer secret.nLongConfirmsMtx.Unlock()
-		secret.numLongtermConfs++
-	}
+	secret.nShortConfirmsMtx.Lock()
+	defer secret.nShortConfirmsMtx.Unlock()
+	secret.numShortConfs++
 
 	// Check if we are the initiator node and have enough confirmations to proceed
-	if msg.SID.IsSTSS() && secret.numShortConfs == len(jv.List()) && jv.sidStore.exists(msg.SID) {
+	if secret.numShortConfs == len(jv.List()) && jv.sidStore.exists(msg.SID) {
 		log.Lvl4("Writing to shortTermSecDone")
 		jv.shortTermSecDone <- true
 		secret.numShortConfs = 0
 	} else {
-		n := secret.numLongtermConfs
-		if isShortTermSecret {
-			n = secret.numShortConfs
-		}
+		n := secret.numShortConfs
 		log.Lvl4("Node %d: %s confirmations %d/%d", jv.Index(), msg.SID,
 			n, len(jv.List()))
 	}

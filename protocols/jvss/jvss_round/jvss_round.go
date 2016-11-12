@@ -13,6 +13,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"time"
 )
 
 // SID is the type of shared secret identifiers
@@ -31,20 +32,24 @@ const randomLength = 32
 // interface.
 type JVSS_ROUND struct {
 	*sda.TreeNodeInstance                  // The SDA TreeNode
-	keyPair               *config.KeyPair  // KeyPair of the host
-	nodeList              []*sda.TreeNode  // List of TreeNodes in the JVSS group
-	pubKeys               []abstract.Point // List of public keys of the above TreeNodes
-	info                  poly.Threshold   // JVSS thresholds
-	schnorr               *poly.Schnorr    // Long-term Schnorr struct to compute distributed signatures
-	secrets               *sharedSecrets   // Shared secrets (short-term ones)
+	keyPair          *config.KeyPair       // KeyPair of the host
+	nodeList         []*sda.TreeNode       // List of TreeNodes in the JVSS group
+	pubKeys          []abstract.Point      // List of public keys of the above TreeNodes
+	info             poly.Threshold        // JVSS thresholds
+	schnorr          *poly.Schnorr         // Long-term Schnorr struct to compute distributed signatures
+	secrets          *sharedSecrets        // Shared secrets (short-term ones)
 
-	shortTermSecDone chan bool // Channel to indicate when short-term shared secrets of all peers are ready
+	shortTermSecDone chan bool             // Channel to indicate when short-term shared secrets of all peers are ready
 
-	sigChan chan *poly.SchnorrSig // Channel for JVSS signature
+	sigChan          chan *poly.SchnorrSig // Channel for JVSS signature
 
 					       // keeps the set of SID this node has started/initiated
-	sidStore *sidStore
+	sidStore         *sidStore
 
+	longtermDoneNum  int
+	longtermChan     chan bool
+
+	longtermSecret   *poly.SharedSecret
 }
 
 // NewJVSS creates a new JVSS protocol instance and returns it.
@@ -69,13 +74,14 @@ func NewJVSS_round(node *sda.TreeNodeInstance, longterm *poly.SharedSecret) (sda
 		shortTermSecDone: make(chan bool, 1),
 		sigChan:          make(chan *poly.SchnorrSig),
 		sidStore:         newSidStore(),
+		longtermDoneNum:   0,
+		longtermChan:          make(chan bool, 1),
+		longtermSecret: longterm,
 	}
-
-	jv.schnorr.Init(jv.keyPair.Suite, jv.info, longterm)
-	b, _ := (*longterm.Share).MarshalBinary()
-	log.Lvlf2("Node %d: Schnorr struct initialised with secret %s",
+	jv.schnorr.Init(jv.keyPair.Suite, jv.info, jv.longtermSecret)
+	b, _ := (*jv.longtermSecret.Share).MarshalBinary()
+	log.Lvlf2("Host %s Node %d: secret is %s",jv.Name(),
 		jv.Index(), hex.EncodeToString(b))
-
 
 	// Setup message handlers
 	h := []interface{}{
@@ -83,6 +89,8 @@ func NewJVSS_round(node *sda.TreeNodeInstance, longterm *poly.SharedSecret) (sda
 		jv.handleSecConf,
 		jv.handleSigReq,
 		jv.handleSigResp,
+		jv.handleLongtermInit,
+		jv.handleLongtermDone,
 	}
 	err := jv.RegisterHandlers(h...)
 	if err != nil {
@@ -91,18 +99,33 @@ func NewJVSS_round(node *sda.TreeNodeInstance, longterm *poly.SharedSecret) (sda
 	return jv, err
 }
 
+func (jv *JVSS_ROUND) SetLongterm(longterm *poly.SharedSecret)  {
+	jv.longtermSecret = longterm
+}
+
 // Start initiates the JVSS protocol by setting up a long-term shared secret
 // which can be used later on by the JVSS group to sign and verify messages.
 func (jv *JVSS_ROUND) Start() error {
+	log.Lvlf1("Start called on %s with node %d", jv.Name(),jv.Index())
+	b, _ := (*jv.longtermSecret.Share).MarshalBinary()
+	log.Lvlf2("Node %d: Schnorr struct initialised with secret %s",
+		jv.Index(), hex.EncodeToString(b))
+	jv.schnorr.Init(jv.keyPair.Suite, jv.info, jv.longtermSecret)
+	req := &LongtermInit{
+		Src: jv.Index(),
+	}
+	if err := jv.Broadcast(req); err != nil {
+		return err
+	}
+	time.Sleep(5*time.Second)
 	return nil
 }
+
 
 // Sign starts a new signing request amongst the JVSS group and returns a
 // Schnorr signature on success.
 func (jv *JVSS_ROUND) Sign(msg []byte) (*poly.SchnorrSig, error) {
-
-	log.Lvl3(jv.Name(), "index", jv.Index(), " => Sign starting")
-
+	log.Lvl2(jv.Name(), "index", jv.Index(), " => Sign starting")
 	// Initialise short-term shared secret only used for this signing request
 	sid := newSID(STSS)
 	jv.sidStore.insert(sid)
@@ -152,13 +175,14 @@ func (jv *JVSS_ROUND) initSecret(sid SID) error {
 			receiver:         poly.NewReceiver(jv.keyPair.Suite, jv.info, jv.keyPair),
 			deals:            make(map[int]*poly.Deal),
 			sigs:             make(map[int]*poly.SchnorrPartialSig),
-			numLongtermConfs: 0,
+			numShortConfs:    0,
 		}
 		jv.secrets.addSecret(sid, sec)
 	}
 
 	secret, err := jv.secrets.secret(sid)
-	if err != nil { // this should never happen here
+	if err != nil {
+		// this should never happen here
 		return err
 	}
 
@@ -203,16 +227,10 @@ func (jv *JVSS_ROUND) finaliseSecret(sid SID) error {
 			return err
 		}
 		secret.secret = sec
-		isShortTermSecret := strings.HasPrefix(string(sid), string(STSS))
-		if isShortTermSecret {
-			secret.nShortConfirmsMtx.Lock()
-			defer secret.nShortConfirmsMtx.Unlock()
-			secret.numShortConfs++
-		} else {
-			secret.nLongConfirmsMtx.Lock()
-			defer secret.nLongConfirmsMtx.Unlock()
-			secret.numLongtermConfs++
-		}
+
+		secret.nShortConfirmsMtx.Lock()
+		defer secret.nShortConfirmsMtx.Unlock()
+		secret.numShortConfs++
 
 		log.Lvlf4("Node %d: %v created", jv.Index(), sid)
 
@@ -284,18 +302,15 @@ func newSecrets() *sharedSecrets {
 
 // secret contains all information for long- and short-term shared secrets.
 type secret struct {
-	secret   *poly.SharedSecret // Shared secret
-	receiver *poly.Receiver     // Receiver to aggregate deals
-				    // XXX potentially get rid of deals buffer later:
-	deals map[int]*poly.Deal // Buffer for deals
-				    // XXX potentially get rid of sig buffer later:
-	sigs map[int]*poly.SchnorrPartialSig // Buffer for partial signatures
+	secret            *poly.SharedSecret              // Shared secret
+	receiver          *poly.Receiver                  // Receiver to aggregate deals
+							  // XXX potentially get rid of deals buffer later:
+	deals             map[int]*poly.Deal              // Buffer for deals
+							  // XXX potentially get rid of sig buffer later:
+	sigs              map[int]*poly.SchnorrPartialSig // Buffer for partial signatures
 
-	// Number of collected confirmations that shared secrets are ready
-	numLongtermConfs int
-	nLongConfirmsMtx sync.Mutex
 
-	// Number of collected (short-term) confirmations that shared secrets are ready
+							  // Number of collected (short-term) confirmations that shared secrets are ready
 	numShortConfs     int
 	nShortConfirmsMtx sync.Mutex
 }

@@ -6,18 +6,23 @@ import (
 	"github.com/dedis/cothority/sda"
 	"github.com/dedis/cothority/protocols/jvss/jvss_setup"
 	"github.com/sriak/crypto/poly"
+	"github.com/sriak/cothority/protocols/jvss/jvss_round"
 )
 
 
 func TestJVSS_ROUND(t *testing.T) {
 	// Setup parameters
 	const TestProtocolName = "JVSS_SETUP_DUMMY" // Protocol name
+	const TestRoundName = "JVSS_ROUND_DUMMY"
 	var nodes uint32 = 5     // Number of nodes
 	msg := []byte("Hello world")
 	sharedSecretLongTermChan := make(chan *poly.SharedSecret)
 
 	log.SetDebugVisible(1)
 
+	sda.GlobalProtocolRegister(TestRoundName, func(n *sda.TreeNodeInstance) (sda.ProtocolInstance, error) {
+		return jvss_round.NewJVSS_round(n, nil)
+	})
 	sda.GlobalProtocolRegister(TestProtocolName, func(n *sda.TreeNodeInstance) (sda.ProtocolInstance, error) {
 		return jvss_setup.NewJVSS_setup(n, sharedSecretLongTermChan)
 	})
@@ -51,14 +56,11 @@ func TestJVSS_ROUND(t *testing.T) {
 	if err != nil {
 		t.Fatal("Couldn't initialise protocol tree:", err)
 	}
-	var jv_round_leader sda.ProtocolInstance = nil
-	for i,node := range local.GetNodes(tree.Root) {
-		log.LLvl1("i=",i)
-		if(i == 0){
-			jv_round_leader,err = NewJVSS_round(node,secrets[0])
-		}
-		NewJVSS_round(node,secrets[i])
+
+	pi, err := local.CreateProtocol(TestRoundName, tree)
+	if err != nil {
+		t.Fatal("Couldn't initialise protocol tree:", err)
 	}
-	jv_round := jv_round_leader.(*JVSS_ROUND)
-	jv_round.Sign(msg)
+	jvss_round := pi.(*jvss_round.JVSS_ROUND)
+	jvss_round.Sign(msg)
 }
