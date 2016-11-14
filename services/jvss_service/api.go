@@ -1,10 +1,11 @@
 package jvss_service
 
 import (
+	"errors"
+
+	"github.com/dedis/cothority/network"
 	"github.com/dedis/cothority/sda"
 	"github.com/sriak/crypto/poly"
-	"github.com/dedis/cothority/network"
-	"errors"
 )
 
 // Client is a structure to communicate with the CoSi
@@ -19,17 +20,17 @@ func NewClient() *Client {
 }
 
 func (c *Client) Setup(r *sda.Roster) error {
-	dst := r.RandomServerIdentity()
-	reply, err := c.Send(dst,&SetupRequest{Roster: r})
+	dst := r.List[0]
+	reply, err := c.Send(dst, &SetupRequest{Roster: r})
 	if e := network.ErrMsg(reply, err); e != nil {
 		return e
 	}
 	return nil
 }
 
-func (c *Client) Sign(r *sda.Roster, msg []byte) (*poly.SchnorrSig,error) {
-	dst := r.RandomServerIdentity()
-	reply, err := c.Send(dst,&SignatureRequest{Message: msg, Roster: r})
+func (c *Client) Sign(r *sda.Roster, msg []byte) (*poly.SchnorrSig, error) {
+	dst := r.List[0]
+	reply, err := c.Send(dst, &SignatureRequest{Message: msg, Roster: r})
 	if e := network.ErrMsg(reply, err); e != nil {
 		return nil, e
 	}
@@ -37,5 +38,5 @@ func (c *Client) Sign(r *sda.Roster, msg []byte) (*poly.SchnorrSig,error) {
 	if !ok {
 		return nil, errors.New("Wrong return-type.")
 	}
-	return sig.sig,nil
+	return sig.sig, nil
 }

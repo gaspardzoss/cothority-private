@@ -1,17 +1,17 @@
 package jvss_service
 
 import (
-	"github.com/dedis/cothority/sda"
-	"github.com/sriak/crypto/poly"
-	"github.com/dedis/cothority/protocols/jvss/jvss_setup"
-	"github.com/dedis/cothority/protocols/jvss/jvss_round"
 	"errors"
-	"github.com/dedis/cothority/log"
-	"github.com/dedis/cothority/network"
-	"encoding/hex"
+	"fmt"
 	"io/ioutil"
 	"os"
-	"fmt"
+
+	"github.com/dedis/cothority/log"
+	"github.com/dedis/cothority/network"
+	"github.com/dedis/cothority/protocols/jvss/jvss_round"
+	"github.com/dedis/cothority/protocols/jvss/jvss_setup"
+	"github.com/dedis/cothority/sda"
+	"github.com/sriak/crypto/poly"
 )
 
 // ServiceName can be used to refer to the name of this service
@@ -34,7 +34,7 @@ type Service struct {
 	path             string
 	sharedSecretchan chan *poly.SharedSecret
 	// Longterm Shared secret of node
-	secret           *poly.SharedSecret
+	secret *poly.SharedSecret
 }
 
 func (s *Service) SignatureRequest(e *network.ServerIdentity, req *SignatureRequest) (network.Body, error) {
@@ -46,7 +46,6 @@ func (s *Service) SignatureRequest(e *network.ServerIdentity, req *SignatureRequ
 	}
 	log.Lvl2("Getting root node")
 	root := pi.(*jvss_round.JVSS_ROUND)
-	pi.Start()
 	sig, err := root.Sign(req.Message)
 	return &SignatureResponse{sig}, nil
 }
@@ -117,7 +116,7 @@ func newJVSSService(c *sda.Context, path string) sda.Service {
 		ServiceProcessor: sda.NewServiceProcessor(c),
 		path:             path,
 		sharedSecretchan: make(chan *poly.SharedSecret, 1),
-		secret: nil,
+		secret:           nil,
 	}
 	//if err := s.tryLoad(); err != nil {
 	//	log.Error(err)
@@ -126,14 +125,14 @@ func newJVSSService(c *sda.Context, path string) sda.Service {
 	go func() {
 		s.secret = <-s.sharedSecretchan
 		//s.save()
-		b, _ := (*s.secret.Share).MarshalBinary()
-		log.Lvlf2("%s - received secret: %s", c.String(), hex.EncodeToString(b))
+		log.Lvlf2("%s - received secret: %s", c.String(), *s.secret.Share)
 	}()
 
 	c.ProtocolRegister(JVSS_SETUP, func(n *sda.TreeNodeInstance) (sda.ProtocolInstance, error) {
 		return jvss_setup.NewJVSS_setup(n, s.sharedSecretchan)
 	})
 	c.ProtocolRegister(JVSS_ROUND, func(n *sda.TreeNodeInstance) (sda.ProtocolInstance, error) {
+		log.Print(c.String(), "JVSS ROUND with secret", *s.secret.Share)
 		return jvss_round.NewJVSS_round(n, s.secret)
 	})
 

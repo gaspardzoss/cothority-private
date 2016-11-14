@@ -1,10 +1,11 @@
 package jvss_round
 
 import (
+	"encoding/hex"
+
 	"github.com/dedis/cothority/log"
 	"github.com/dedis/cothority/sda"
 	"github.com/sriak/crypto/poly"
-	"encoding/hex"
 )
 
 type LongtermInit struct {
@@ -36,7 +37,7 @@ func (jv *JVSS_ROUND) handleLongtermInit(m WlongtermInit) error {
 func (jv *JVSS_ROUND) handleLongtermDone(m WlongtermDone) error {
 	jv.longtermDoneNum++
 	// We are only waiting for answers of all other nodes
-	if ( jv.longtermDoneNum == len(jv.List()) - 1) {
+	if jv.longtermDoneNum == len(jv.List())-1 {
 		jv.longtermChan <- true
 		log.Lvl1("Sent to chan")
 	}
@@ -71,8 +72,6 @@ type SigRespMsg struct {
 	SID SID
 	Sig *poly.SchnorrPartialSig
 }
-
-
 
 // WSecInitMsg is a SDA-wrapper around SecInitMsg.
 type WSecInitMsg struct {
