@@ -7,7 +7,7 @@ import (
 	"github.com/dedis/cothority/sda"
 	"github.com/dedis/cothority/protocols/jvss"
 	"bytes"
-	"io/ioutil"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
@@ -29,28 +29,37 @@ func TestJVSSService(t *testing.T) {
 
 	// Send a request to the service
 	client := NewTestClient(local)
+
 	log.Lvl1("Sending setup request to service...")
 	pub, err := client.Setup(el)
 	log.ErrFatal(err, "Couldn't send")
+	pubB, err := (*pub).MarshalBinary()
+	log.ErrFatal(err, "Couldn't marshal pubkey")
+
 	log.Lvl1("Sending sign request to service...")
 	sig, err := client.Sign(el, msg)
 	log.ErrFatal(err, "Couldn't send")
-	if(sig == nil){
-		t.Fatal("Sig was nil")
-	}
-	log.LLvlf1("Signature %s", sig.Signature)
+	require.NotNil(t, sig, "Sig was nil")
+	log.Lvlf1("Signature random commit %s", sig.Random.SecretCommit())
+	//sigR := sig.Random.SecretCommit()
+	//sigRB, err := sigR.MarshalBinary()
+	//log.ErrFatal(err, "Couldn't marshal random commit")
+	//sigB := sig.Signature
+	//sigSB, err := (*sigB).MarshalBinary()
+	//log.ErrFatal(err, "Couldn't marshal signature commit")
+	//
 	buffer := bytes.NewBuffer(nil)
-	jvss.SerializePubKey(buffer, pub, "raph@raph.com")
+	jvss.SerializePubKey(buffer, pubB, "raph@raph.com")
 	if err != nil {
 		t.Fatal("Couldn't serialize public key: ", err)
 	}
-	err = ioutil.WriteFile("testPubKey.pgp", buffer.Bytes(), 0644)
-	if err != nil {
-		t.Fatal("Couldn't write public key: ", err)
-	}
-	log.Lvl1("Wrote public key file")
+	//err = ioutil.WriteFile("testPubKey.pgp", buffer.Bytes(), 0644)
+	//if err != nil {
+	//	t.Fatal("Couldn't write public key: ", err)
+	//}
+	//log.Lvl1("Wrote public key file")
 	//buffer = bytes.NewBuffer(nil)
-	//err = jvss.SerializeSignature(buffer, msg, pub, r, s)
+	//err = jvss.SerializeSignature(buffer, msg, pubB, sigRB, sigSB)
 	//if err != nil {
 	//	t.Fatal("Couldn't serialize signature: ", err)
 	//}

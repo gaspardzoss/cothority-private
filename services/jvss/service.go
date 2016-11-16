@@ -8,10 +8,10 @@ import (
 
 	"github.com/dedis/cothority/log"
 	"github.com/dedis/cothority/network"
-	"github.com/dedis/cothority/protocols/jvss/jvss_round"
-	"github.com/dedis/cothority/protocols/jvss/jvss_setup"
+	"github.com/dedis/cothority/protocols/jvss/setup_and_round"
 	"github.com/dedis/cothority/sda"
 	"github.com/sriak/crypto/poly"
+	"sync"
 )
 
 // ServiceName can be used to refer to the name of this service
@@ -35,7 +35,8 @@ type Service struct {
 	path             string
 	sharedSecretchan chan *poly.SharedSecret
 	// Longterm Shared secret of node
-	secret *poly.SharedSecret
+	secretMutex    sync.Mutex
+	secret           *poly.SharedSecret
 }
 
 func (s *Service) SignatureRequest(e *network.ServerIdentity, req *SignatureRequest) (network.Body, error) {
@@ -46,11 +47,13 @@ func (s *Service) SignatureRequest(e *network.ServerIdentity, req *SignatureRequ
 		return nil, errors.New("Couldn't create new node: " + err.Error())
 	}
 	log.Lvl2("Getting root node")
-	root := pi.(*jvss_round.JVSS_ROUND)
+	root := pi.(*setup_and_round.JVSS_ROUND)
 	sig, err := root.Sign(req.Message)
+	log.Lvlf1("Signature random commit %s", sig.Random.SecretCommit())
 	return &SignatureResponse{sig}, nil
 }
 
+// TODO do setup every time ? Or only do if secret != nil ?
 func (s *Service) SetupRequest(e *network.ServerIdentity, req *SetupRequest) (network.Body, error) {
 	tree := req.Roster.GenerateBinaryTree()
 	pi, err := s.CreateProtocolSDA(JVSS_SETUP, tree)
@@ -59,11 +62,8 @@ func (s *Service) SetupRequest(e *network.ServerIdentity, req *SetupRequest) (ne
 	}
 	pi.Start()
 	log.Lvl2("Setup done")
-	pubKeyBinary, err := s.secret.Pub.SecretCommit().MarshalBinary()
-	if err != nil {
-		return nil, errors.New("Couldn't Marshall public key: " + err.Error())
-	}
-	return &SetupResponse{pubKeyBinary}, nil
+	pubKey := s.secret.Pub.SecretCommit()
+	return &SetupResponse{&pubKey}, nil
 }
 
 func (s *Service) save() {
@@ -72,7 +72,7 @@ func (s *Service) save() {
 	if err != nil {
 		log.Error("Couldn't marshal service:", err)
 	} else {
-		err = ioutil.WriteFile(s.path+"/secret.bin", b, 0660)
+		err = ioutil.WriteFile(s.path + "/secret.bin", b, 0660)
 		if err != nil {
 			log.Error("Couldn't save file:", err)
 		}
@@ -92,8 +92,10 @@ func (s *Service) tryLoad() error {
 		if err != nil {
 			return fmt.Errorf("Couldn't unmarshal: %s", err)
 		}
-		log.Lvl3("Successfully loaded")
+		log.Lvl2("Successfully loaded")
+		s.secretMutex.Lock()
 		s.secret = msg.(*poly.SharedSecret)
+		s.secretMutex.Unlock()
 	}
 	return nil
 }
@@ -128,17 +130,19 @@ func newJVSSService(c *sda.Context, path string) sda.Service {
 	}
 
 	go func() {
+		s.secretMutex.Lock()
+		defer s.secretMutex.Unlock()
 		s.secret = <-s.sharedSecretchan
 		s.save()
 		log.Lvlf2("%s - received secret: %s", c.String(), *s.secret.Share)
 	}()
 
 	c.ProtocolRegister(JVSS_SETUP, func(n *sda.TreeNodeInstance) (sda.ProtocolInstance, error) {
-		return jvss_setup.NewJVSS_setup(n, s.sharedSecretchan)
+		return setup_and_round.NewJVSS_setup(n, s.sharedSecretchan)
 	})
 	c.ProtocolRegister(JVSS_ROUND, func(n *sda.TreeNodeInstance) (sda.ProtocolInstance, error) {
 		log.Print(c.String(), "JVSS ROUND with secret", *s.secret.Share)
-		return jvss_round.NewJVSS_round(n, s.secret)
+		return setup_and_round.NewJVSS_round(n, s.secret)
 	})
 
 	if err := s.RegisterMessages(s.SetupRequest, s.SignatureRequest); err != nil {

@@ -2,17 +2,9 @@ package jvss_service
 
 import (
 	"github.com/dedis/cothority/sda"
-	"github.com/dedis/cothority/network"
 	"github.com/sriak/crypto/poly"
+	"github.com/dedis/crypto/abstract"
 )
-
-func init() {
-	for _, msg := range []interface{}{
-		SignatureRequest{}, SignatureResponse{}, SetupRequest{}, SetupResponse{},
-	} {
-		network.RegisterPacketType(msg)
-	}
-}
 
 type SignatureRequest struct {
 	Message []byte
@@ -20,7 +12,7 @@ type SignatureRequest struct {
 }
 
 type SignatureResponse struct {
-	signature *poly.SchnorrSig
+	Signature *poly.SchnorrSig
 }
 
 type SetupRequest struct {
@@ -28,5 +20,5 @@ type SetupRequest struct {
 }
 
 type SetupResponse struct {
-	publicKey []byte
+	PublicKey *abstract.Point
 }
