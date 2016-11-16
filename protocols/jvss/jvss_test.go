@@ -6,6 +6,8 @@ import (
 	"github.com/dedis/cothority/log"
 	"github.com/dedis/cothority/sda"
 	"github.com/stretchr/testify/assert"
+	"github.com/dedis/cothority/network"
+	"github.com/sriak/crypto/poly"
 )
 
 func TestMain(m *testing.M) {
@@ -49,9 +51,14 @@ func TestJVSS(t *testing.T) {
 		log.Lvl1("JVSS - starting round", i)
 		log.Lvl1("JVSS - requesting signature")
 		sig, err := jv.Sign(msg)
+		network.RegisterPacketType(&poly.SchnorrSig{})
+		b, err := network.MarshalRegisteredType(sig)
 		if err != nil {
 			t.Fatal("Error signature failed", err)
 		}
+		_, body,_ := network.UnmarshalRegistered(b)
+		sig2 := body.(*poly.SchnorrSig)
+		sig2.Random.SecretCommit()
 		log.Lvl1("JVSS - signature received")
 		err = jv.Verify(msg, sig)
 		if err != nil {

@@ -19,13 +19,17 @@ func NewClient() *Client {
 	return &Client{Client: sda.NewClient(ServiceName)}
 }
 
-func (c *Client) Setup(r *sda.Roster) error {
+func (c *Client) Setup(r *sda.Roster) ([]byte, error) {
 	dst := r.List[0]
 	reply, err := c.Send(dst, &SetupRequest{Roster: r})
 	if e := network.ErrMsg(reply, err); e != nil {
-		return e
+		return nil, e
 	}
-	return nil
+	pubKey, ok := reply.Msg.(SetupResponse)
+	if !ok {
+		return nil, errors.New("Wrong return-type.")
+	}
+	return pubKey.publicKey, nil
 }
 
 func (c *Client) Sign(r *sda.Roster, msg []byte) (*poly.SchnorrSig, error) {
@@ -38,5 +42,5 @@ func (c *Client) Sign(r *sda.Roster, msg []byte) (*poly.SchnorrSig, error) {
 	if !ok {
 		return nil, errors.New("Wrong return-type.")
 	}
-	return sig.sig, nil
+	return sig.signature, nil
 }

@@ -1,35 +1,9 @@
-package jvss_setup
+package setup_and_round
 
 import (
 	"github.com/dedis/cothority/log"
-	"github.com/dedis/cothority/sda"
 	"github.com/sriak/crypto/poly"
 )
-
-// SecInitMsg are used to initialise new shared secrets both long- and
-// short-term.
-type SecInitMsg struct {
-	Src  int
-	Deal []byte
-}
-
-// SecConfMsg are used to confirm to other peers that we have finished setting
-// up the shared secret.
-type SecConfMsg struct {
-	Src int
-}
-
-// WSecInitMsg is a SDA-wrapper around SecInitMsg.
-type WSecInitMsg struct {
-	*sda.TreeNode
-	SecInitMsg
-}
-
-// WSecConfMsg is a SDA-wrapper around SecConfMsg.
-type WSecConfMsg struct {
-	*sda.TreeNode
-	SecConfMsg
-}
 
 func (jv *JVSS_SETUP) handleSecInit(m WSecInitMsg) error {
 	msg := m.SecInitMsg
@@ -87,7 +61,7 @@ func (jv *JVSS_SETUP) handleSecConf(m WSecConfMsg) error {
 	} else {
 		n := secret.numLongtermConfs
 		log.Lvlf4("Node %d: confirmations %d/%d, last from %d", jv.Index(),
-			n, len(jv.List()),m.RosterIndex)
+			n, len(jv.List()), m.RosterIndex)
 	}
 
 	return nil

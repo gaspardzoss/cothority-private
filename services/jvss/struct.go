@@ -8,7 +8,7 @@ import (
 
 func init() {
 	for _, msg := range []interface{}{
-		SignatureRequest{},SignatureResponse{}, SetupRequest{},SetupResponse{},
+		SignatureRequest{}, SignatureResponse{}, SetupRequest{}, SetupResponse{},
 	} {
 		network.RegisterPacketType(msg)
 	}
@@ -20,12 +20,13 @@ type SignatureRequest struct {
 }
 
 type SignatureResponse struct {
-	sig *poly.SchnorrSig
+	signature *poly.SchnorrSig
 }
 
 type SetupRequest struct {
-	Roster  *sda.Roster
+	Roster *sda.Roster
 }
 
 type SetupResponse struct {
+	publicKey []byte
 }

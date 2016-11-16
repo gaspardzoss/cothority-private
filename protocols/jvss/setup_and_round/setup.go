@@ -1,36 +1,28 @@
-package jvss_setup
+package setup_and_round
 
 import (
 	"github.com/dedis/cothority/sda"
 	"github.com/dedis/crypto/config"
 	"github.com/dedis/crypto/abstract"
 	"github.com/sriak/crypto/poly"
-	"sync"
 	"github.com/dedis/cothority/log"
 )
 
-//func init() {
-//	sda.GlobalProtocolRegister("JVSS_SETUP", NewJVSS)
-//}
-
-// randomLength is the length of random bytes that will be appended to SID to
-// make them unique per signing requests
-const randomLength = 32
 
 // JVSS is the main protocol struct and implements the sda.ProtocolInstance
 // interface.
 type JVSS_SETUP struct {
-	*sda.TreeNodeInstance                  // The SDA TreeNode
-	keyPair               *config.KeyPair  // KeyPair of the host
-	nodeList              []*sda.TreeNode  // List of TreeNodes in the JVSS group
-	pubKeys               []abstract.Point // List of public keys of the above TreeNodes
-	info                  poly.Threshold   // JVSS thresholds
+	*sda.TreeNodeInstance                     // The SDA TreeNode
+	keyPair                  *config.KeyPair  // KeyPair of the host
+	nodeList                 []*sda.TreeNode  // List of TreeNodes in the JVSS group
+	pubKeys                  []abstract.Point // List of public keys of the above TreeNodes
+	info                     poly.Threshold   // JVSS thresholds
 
-	longTermSecDone  chan bool // Channel to indicate when long-term shared secrets of all peers are ready
+	longTermSecDone          chan bool        // Channel to indicate when long-term shared secrets of all peers are ready
 
 	sharedSecretLongTermChan chan *poly.SharedSecret
 
-	sharedSecretLongTerm	*secret
+	sharedSecretLongTerm     *secret
 }
 
 // NewJVSS creates a new JVSS protocol instance and returns it.
@@ -84,7 +76,7 @@ func (jv *JVSS_SETUP) Start() error {
 func (jv *JVSS_SETUP) initSecret() error {
 
 	// Initialise shared secret if not already done
-	if(jv.sharedSecretLongTerm == nil){
+	if (jv.sharedSecretLongTerm == nil) {
 		jv.sharedSecretLongTerm = &secret{
 			receiver:         poly.NewReceiver(jv.keyPair.Suite, jv.info, jv.keyPair),
 			deals:            make(map[int]*poly.Deal),
@@ -92,7 +84,6 @@ func (jv *JVSS_SETUP) initSecret() error {
 			numLongtermConfs: 0,
 		}
 	}
-
 
 	secret := jv.sharedSecretLongTerm
 
@@ -159,20 +150,4 @@ func (jv *JVSS_SETUP) GetLongTermSecret() *poly.SharedSecret {
 	return jv.sharedSecretLongTerm.secret
 }
 
-// secret contains all information for long- and short-term shared secrets.
-type secret struct {
-	secret   *poly.SharedSecret // Shared secret
-	receiver *poly.Receiver     // Receiver to aggregate deals
-				    // XXX potentially get rid of deals buffer later:
-	deals map[int]*poly.Deal // Buffer for deals
-				    // XXX potentially get rid of sig buffer later:
-	sigs map[int]*poly.SchnorrPartialSig // Buffer for partial signatures
 
-	// Number of collected confirmations that shared secrets are ready
-	numLongtermConfs int
-	nLongConfirmsMtx sync.Mutex
-
-	// Number of collected (short-term) confirmations that shared secrets are ready
-	numShortConfs     int
-	nShortConfirmsMtx sync.Mutex
-}

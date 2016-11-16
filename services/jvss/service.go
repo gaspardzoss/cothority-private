@@ -21,6 +21,7 @@ const JVSS_ROUND = "JVSS_round"
 
 func init() {
 	sda.RegisterNewService(ServiceName, newJVSSService)
+	network.RegisterPacketType(&poly.SharedSecret{})
 	//sda.GlobalProtocolRegister(JVSS_ROUND,func (n *sda.TreeNodeInstance) (sda.ProtocolInstance, error) {
 	//	return jvss_round.NewJVSS_round(n,nil)
 	//});
@@ -58,7 +59,11 @@ func (s *Service) SetupRequest(e *network.ServerIdentity, req *SetupRequest) (ne
 	}
 	pi.Start()
 	log.Lvl2("Setup done")
-	return nil, nil
+	pubKeyBinary, err := s.secret.Pub.SecretCommit().MarshalBinary()
+	if err != nil {
+		return nil, errors.New("Couldn't Marshall public key: " + err.Error())
+	}
+	return &SetupResponse{pubKeyBinary}, nil
 }
 
 func (s *Service) save() {
@@ -118,13 +123,13 @@ func newJVSSService(c *sda.Context, path string) sda.Service {
 		sharedSecretchan: make(chan *poly.SharedSecret, 1),
 		secret:           nil,
 	}
-	//if err := s.tryLoad(); err != nil {
-	//	log.Error(err)
-	//}
+	if err := s.tryLoad(); err != nil {
+		log.Error(err)
+	}
 
 	go func() {
 		s.secret = <-s.sharedSecretchan
-		//s.save()
+		s.save()
 		log.Lvlf2("%s - received secret: %s", c.String(), *s.secret.Share)
 	}()
 

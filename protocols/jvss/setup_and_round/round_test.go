@@ -1,11 +1,11 @@
-package jvss_round
+package setup_and_round
 
 import (
 	"sync"
 	"testing"
 
 	"github.com/dedis/cothority/log"
-	"github.com/dedis/cothority/protocols/jvss/jvss_setup"
+	"github.com/dedis/cothority/protocols/jvss/setup_and_round"
 	"github.com/dedis/cothority/sda"
 	"github.com/sriak/crypto/poly"
 	"github.com/stretchr/testify/require"
@@ -40,7 +40,7 @@ func TestJVSS_ROUND(t *testing.T) {
 		}(i, longTerm)
 
 		h.ProtocolRegister(TestProtocolName, func(n *sda.TreeNodeInstance) (sda.ProtocolInstance, error) {
-			return jvss_setup.NewJVSS_setup(n, longTerm)
+			return setup_and_round.NewJVSS_setup(n, longTerm)
 		})
 
 	}
