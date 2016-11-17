@@ -11,6 +11,7 @@ package jvss
 
 import (
 	"crypto/rand"
+	"crypto/sha512"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -21,7 +22,7 @@ import (
 	"github.com/dedis/cothority/sda"
 	"github.com/dedis/crypto/abstract"
 	"github.com/dedis/crypto/config"
-	"github.com/dedis/crypto/poly"
+	"github.com/sriak/crypto/poly"
 )
 
 func init() {
@@ -125,6 +126,7 @@ func (jv *JVSS) Start() error {
 	return err
 }
 
+
 // Verify verifies the given message against the given Schnorr signature.
 // Returns nil if the signature is valid and an error otherwise.
 func (jv *JVSS) Verify(msg []byte, sig *poly.SchnorrSig) error {
@@ -133,9 +135,8 @@ func (jv *JVSS) Verify(msg []byte, sig *poly.SchnorrSig) error {
 		return fmt.Errorf("Error, long-term shared secret has not been initialised")
 	}
 
-	h := jv.keyPair.Suite.Hash()
-	_, _ = h.Write(msg) // ignore error; verification wil fail anyways
-	return jv.schnorr.VerifySchnorrSig(sig, h)
+	h := sha512.New()
+	return jv.schnorr.VerifySchnorrSig(sig, h, msg)
 }
 
 // Sign starts a new signing request amongst the JVSS group and returns a
@@ -242,6 +243,7 @@ func (jv *JVSS) finaliseSecret(sid SID) error {
 		len(jv.List()))
 
 	if len(secret.deals) == jv.info.T {
+
 		for _, deal := range secret.deals {
 			if _, err := secret.receiver.AddDeal(jv.Index(), deal); err != nil {
 				log.Error(jv.Index(), err)
@@ -294,11 +296,13 @@ func (jv *JVSS) sigPartial(sid SID, msg []byte) (*poly.SchnorrPartialSig, error)
 		return nil, err
 	}
 
-	hash := jv.keyPair.Suite.Hash()
-	if _, err := hash.Write(msg); err != nil {
-		return nil, err
-	}
-	if err := jv.schnorr.NewRound(secret.secret, hash); err != nil {
+	//hash := jv.keyPair.Suite.Hash()
+	// TODO
+	hash := sha512.New()
+	//if _, err := hash.Write(msg); err != nil {
+	//	return nil, err
+	//}
+	if err := jv.schnorr.NewRound(secret.secret, hash, msg); err != nil {
 		return nil, err
 	}
 	ps := jv.schnorr.RevealPartialSig()
