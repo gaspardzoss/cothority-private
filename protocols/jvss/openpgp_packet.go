@@ -6,7 +6,8 @@ import (
 	"crypto/sha256"
 	"hash"
 	"io"
-	"time"
+	"github.com/btcsuite/golangcrypto/openpgp/armor"
+	"io/ioutil"
 )
 
 const PubKeyAlgoEDDSA = 22
@@ -32,7 +33,7 @@ func HashMessage(h hash.Hash, msg []byte) []byte {
 
 	// scalar octect count for hashed subpacket data
 	hashSubacketLength := 0
-	buf = append(buf, byte(hashSubacketLength>>8))
+	buf = append(buf, byte(hashSubacketLength >> 8))
 	buf = append(buf, byte(hashSubacketLength))
 
 	// trailer
@@ -40,9 +41,9 @@ func HashMessage(h hash.Hash, msg []byte) []byte {
 	buf = append(buf, 0xff)
 	// total length = header + subpacket length
 	l := 6 + hashSubacketLength
-	buf = append(buf, byte(l>>24))
-	buf = append(buf, byte(l>>16))
-	buf = append(buf, byte(l>>8))
+	buf = append(buf, byte(l >> 24))
+	buf = append(buf, byte(l >> 16))
+	buf = append(buf, byte(l >> 8))
 	buf = append(buf, byte(l))
 	h.Write(buf)
 	return h.Sum(nil)
@@ -72,16 +73,27 @@ func SerializeSignature(w io.Writer, data, pubKey, r, s []byte) (err error) {
 	return
 }
 
+func SerializeSignatureToArmor(w io.Writer, data, pubKey, r, s []byte) (err error) {
+	writer, err := armor.Encode(w, "PGP SIGNATURE", nil)
+	if err != nil {
+		return
+	}
+	err = SerializeSignature(writer, data, pubKey, r, s)
+	if err != nil {
+		return
+	}
+	writer.Close()
+	return
+}
+
 // Serializes into the given writer the public key and the user id cf. RFC 4880
 // section 5.5.1.1
 func SerializePubKey(w io.Writer, pubKey []byte, userID string) (err error) {
 	// We prepend the pubKey with 0x40 to indicate that it is compressed cf.
 	// https://tools.ietf.org/html/draft-ietf-openpgp-rfc4880bis-00#section-13.3
 	pubKey = append([]byte{0x40}, pubKey...)
-	// Packet header (1 octet of size since size < 192)
-	length := 2
 	// Version number = 4
-	length += 1
+	length := 1
 	// Creation time
 	length += 4
 	// public key algo
@@ -90,6 +102,8 @@ func SerializePubKey(w io.Writer, pubKey []byte, userID string) (err error) {
 	length += 1
 	// OID length
 	length += len(oid)
+	// Length of pubkey
+	length += 2
 	// MPI Point length
 	length += len(pubKey)
 	packetType := packetTypePublicKey
@@ -103,7 +117,66 @@ func SerializePubKey(w io.Writer, pubKey []byte, userID string) (err error) {
 	}
 	err = serializeUserID(w, userID)
 	return
+}
 
+func SerializePubKeyToArmor(w io.Writer, pubKey []byte, userID string) (err error) {
+	writer, err := armor.Encode(w, "PGP PUBLIC KEY BLOCK", nil)
+	if err != nil {
+		return
+	}
+	err = SerializePubKey(writer, pubKey, userID)
+	if err != nil {
+		return
+	}
+	writer.Close()
+	return
+}
+
+// Can only be used on packets created by SerializePubKey
+func DeSerializePubKey(r io.Reader) ([]byte, error) {
+	b, err := ioutil.ReadAll(r);
+	if err != nil {
+		return nil, err
+	}
+	// Header
+	length := 2
+	// Version number = 4
+	length += 1
+	// Creation time
+	length += 4
+	// public key algo
+	length += 1
+	// size of OID
+	length += 1
+	// OID length
+	length += len(oid)
+	// Length of pubkey
+	length += 2
+	// Byte 0x40 for compression
+	length += 1
+	return b[length:length + 32], nil
+	//if _, err := r.Read(make([]byte, length)); err != nil {
+	//	return nil, err
+	//}
+	////b, _ := ioutil.ReadAll(r)
+	////log.Lvl1(hex.EncodeToString(b))
+	//// Hardcoded size of public key....
+	//b := make([]byte, 32)
+	//n, err := r.Read(b)
+	//log.Lvl1(n)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//log.Lvl1(hex.EncodeToString(b))
+	//return b, nil
+}
+
+func DeSerializeArmoredPubKey(r io.Reader) ([]byte, error) {
+	block, err := armor.Decode(r)
+	if err != nil {
+		return nil, err
+	}
+	return DeSerializePubKey(block.Body)
 }
 
 // Writes an user id. cf. RFC 4880 section 5.11
@@ -129,7 +202,7 @@ func serializeHeader(w io.Writer, ptype int, length int) (err error) {
 		n = 2
 	} else if length < 8384 {
 		length -= 192
-		buf[1] = 192 + byte(length>>8)
+		buf[1] = 192 + byte(length >> 8)
 		buf[2] = byte(length)
 		n = 3
 	} else {
@@ -150,10 +223,11 @@ func serializePubKeyWithoutHeader(w io.Writer, pubKey []byte) (err error) {
 	// Version number 4
 	buf = append(buf, byte(4))
 
-	t := uint32(time.Now().Unix())
-	buf = append(buf, byte(t>>24))
-	buf = append(buf, byte(t>>16))
-	buf = append(buf, byte(t>>8))
+	// Fix time to zero to avoid problem when computing keyID...
+	t := uint32(0)
+	buf = append(buf, byte(t >> 24))
+	buf = append(buf, byte(t >> 16))
+	buf = append(buf, byte(t >> 8))
 	buf = append(buf, byte(t))
 
 	// Algo used for public key is EDDSA
@@ -164,8 +238,8 @@ func serializePubKeyWithoutHeader(w io.Writer, pubKey []byte) (err error) {
 	buf = append(buf, oid...)
 
 	// Public key size is actually 263 bits cf https://tools.ietf.org/html/draft-ietf-openpgp-rfc4880bis-00#section-13.3
-	bitLength := uint16(8*len(pubKey) - 1)
-	buf = append(buf, byte(bitLength>>8))
+	bitLength := uint16(8 * len(pubKey) - 1)
+	buf = append(buf, byte(bitLength >> 8))
 	buf = append(buf, byte(bitLength))
 
 	buf = append(buf, pubKey...)
@@ -188,7 +262,7 @@ func signaturePacket(data, r, s, keyID []byte) (sig []byte) {
 
 	// scalar octect count for hashed subpacket data
 	hashSubpacketLength := 0
-	buf = append(buf, byte(hashSubpacketLength>>8))
+	buf = append(buf, byte(hashSubpacketLength >> 8))
 	buf = append(buf, byte(hashSubpacketLength))
 
 	hasher := sha256.New()
@@ -208,12 +282,12 @@ func signaturePacket(data, r, s, keyID []byte) (sig []byte) {
 	buf = append(buf, signedHashValue[:2]...)
 	// Length of MPI in bits 256
 	length := uint16(8 * len(r))
-	buf = append(buf, byte(length>>8))
+	buf = append(buf, byte(length >> 8))
 	buf = append(buf, byte(length))
 	buf = append(buf, r...)
 	// Length of MPI in bits 256
 	length = uint16(8 * len(s))
-	buf = append(buf, byte(length>>8))
+	buf = append(buf, byte(length >> 8))
 	buf = append(buf, byte(length))
 	buf = append(buf, s...)
 	return buf

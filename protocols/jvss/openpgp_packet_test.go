@@ -56,6 +56,7 @@ func TestJVSSPubKeyAndSignature(t *testing.T) {
 	msg := []byte("Hello world")
 	hasher := sha256.New()
 	msg = HashMessage(hasher, msg)
+	log.Lvl1("Hashing " + hex.EncodeToString(msg))
 
 	local := sda.NewLocalTest()
 	_, _, tree := local.GenTree(int(nodes), false)
@@ -95,11 +96,30 @@ func TestJVSSPubKeyAndSignature(t *testing.T) {
 	if err != nil {
 		t.Fatal("Couldn't serialize public key: ", err)
 	}
+	secPubBDeserialized, err := DeSerializePubKey(bytes.NewReader(buffer.Bytes()))
+
+	log.ErrFatal(err)
+	if(!bytes.Equal(secPubB,secPubBDeserialized)) {
+		t.Fatal("Deserialized didn't work")
+	}
 	err = ioutil.WriteFile("testPubKeyJVSS.pgp", buffer.Bytes(), 0644)
 	if err != nil {
 		t.Fatal("Couldn't write public key: ", err)
 	}
 	log.Lvl1("Wrote public key file")
+	buffer.Reset()
+	err = SerializePubKeyToArmor(buffer, secPubB, "raph@raph.com")
+	if err != nil {
+		t.Fatal("Couldn't serialize public key: ", err)
+	}
+	secPubArmorBDeserialized, err := DeSerializeArmoredPubKey(bytes.NewReader(buffer.Bytes()))
+	log.ErrFatal(err)
+	if(!bytes.Equal(secPubB,secPubArmorBDeserialized)) {
+		t.Fatal("Deserialized didn't work")
+	}
+	err = ioutil.WriteFile("testPubKeyJVSS.asc", buffer.Bytes(), 0644)
+	log.Lvl1("Wrote public key file to armor")
+
 
 	r, _ := sig.Random.SecretCommit().MarshalBinary()
 	s, _ := (*sig.Signature).MarshalBinary()
@@ -114,6 +134,16 @@ func TestJVSSPubKeyAndSignature(t *testing.T) {
 		t.Fatal("Couldn't write public key: ", err)
 	}
 	log.Lvl1("Wrote signature file")
+	buffer.Reset()
+	err = SerializeSignatureToArmor(buffer, msg, secPubB, r, s)
+	if err != nil {
+		t.Fatal("Couldn't serialize signature: ", err)
+	}
+	err = ioutil.WriteFile("textJVSS.asc", buffer.Bytes(), 0644)
+	if err != nil {
+		t.Fatal("Couldn't write public key: ", err)
+	}
+	log.Lvl1("Wrote signature file armor")
 	err = ioutil.WriteFile("textJVSS", data, 0644)
 	if err != nil {
 		t.Fatal("Couldn't text file: ", err)
