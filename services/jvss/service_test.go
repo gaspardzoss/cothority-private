@@ -1,12 +1,15 @@
 package jvss_service
 
 import (
+	"fmt"
 	"testing"
 
-	"github.com/dedis/cothority/log"
-	"github.com/dedis/cothority/sda"
-	"github.com/dedis/cothority/protocols/jvss"
 	"bytes"
+
+	"github.com/dedis/cothority/log"
+	"github.com/dedis/cothority/network"
+	"github.com/dedis/cothority/protocols/jvss"
+	"github.com/dedis/cothority/sda"
 	"github.com/stretchr/testify/require"
 )
 
@@ -40,7 +43,8 @@ func TestJVSSService(t *testing.T) {
 	sig, err := client.Sign(el, msg)
 	log.ErrFatal(err, "Couldn't send")
 	require.NotNil(t, sig, "Sig was nil")
-	log.Lvlf1("Signature random commit %s", sig.Random.SecretCommit())
+	fmt.Println("SIGNATURE VERIFICATION : ", sig.Verify(network.Suite, *pub, msg))
+	//log.Lvlf1("Signature random commit %s", sig.Random.SecretCommit())
 	//sigR := sig.Random.SecretCommit()
 	//sigRB, err := sigR.MarshalBinary()
 	//log.ErrFatal(err, "Couldn't marshal random commit")
@@ -75,5 +79,3 @@ func TestJVSSService(t *testing.T) {
 	//log.Lvl1("Wrote text file")
 
 }
-
-

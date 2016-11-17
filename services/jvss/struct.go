@@ -2,7 +2,6 @@ package jvss_service
 
 import (
 	"github.com/dedis/cothority/sda"
-	"github.com/sriak/crypto/poly"
 	"github.com/dedis/crypto/abstract"
 )
 
@@ -12,7 +11,7 @@ type SignatureRequest struct {
 }
 
 type SignatureResponse struct {
-	Signature *poly.SchnorrSig
+	Signature *JVSSSig
 }
 
 type SetupRequest struct {

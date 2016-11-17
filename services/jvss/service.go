@@ -1,17 +1,20 @@
 package jvss_service
 
 import (
+	"crypto/sha512"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
 
+	"sync"
+
 	"github.com/dedis/cothority/log"
 	"github.com/dedis/cothority/network"
 	"github.com/dedis/cothority/protocols/jvss/setup_and_round"
 	"github.com/dedis/cothority/sda"
+	"github.com/dedis/crypto/abstract"
 	"github.com/sriak/crypto/poly"
-	"sync"
 )
 
 // ServiceName can be used to refer to the name of this service
@@ -35,8 +38,38 @@ type Service struct {
 	path             string
 	sharedSecretchan chan *poly.SharedSecret
 	// Longterm Shared secret of node
-	secretMutex    sync.Mutex
-	secret           *poly.SharedSecret
+	secretMutex sync.Mutex
+	secret      *poly.SharedSecret
+}
+
+type JVSSSig struct {
+	Signature abstract.Scalar
+	Random    abstract.Point
+}
+
+func (s *JVSSSig) Verify(suite abstract.Suite, public abstract.Point, msg []byte) error {
+	// gamma * G
+	left := suite.Point().Mul(nil, s.Signature)
+
+	randomCommit := s.Random
+	publicCommit := public
+	h := sha512.New()
+	if _, err := randomCommit.MarshalTo(h); err != nil {
+		return err
+	}
+	if _, err := publicCommit.MarshalTo(h); err != nil {
+		return err
+	}
+	h.Write(msg)
+	buff := h.Sum(nil)
+	hash := suite.Scalar().SetBytes(buff)
+
+	// RandomSecretCommit + H(...) * LongtermSecretCommit
+	right := suite.Point().Add(randomCommit, suite.Point().Mul(publicCommit, hash))
+	if !left.Equal(right) {
+		return errors.New("Signature could not have been verified against the message")
+	}
+	return nil
 }
 
 func (s *Service) SignatureRequest(e *network.ServerIdentity, req *SignatureRequest) (network.Body, error) {
@@ -50,7 +83,12 @@ func (s *Service) SignatureRequest(e *network.ServerIdentity, req *SignatureRequ
 	root := pi.(*setup_and_round.JVSS_ROUND)
 	sig, err := root.Sign(req.Message)
 	log.Lvlf1("Signature random commit %s", sig.Random.SecretCommit())
-	return &SignatureResponse{sig}, nil
+
+	jvssSig := &JVSSSig{
+		Signature: *sig.Signature,
+		Random:    sig.Random.SecretCommit(),
+	}
+	return &SignatureResponse{jvssSig}, nil
 }
 
 // TODO do setup every time ? Or only do if secret != nil ?
@@ -72,7 +110,7 @@ func (s *Service) save() {
 	if err != nil {
 		log.Error("Couldn't marshal service:", err)
 	} else {
-		err = ioutil.WriteFile(s.path + "/secret.bin", b, 0660)
+		err = ioutil.WriteFile(s.path+"/secret.bin", b, 0660)
 		if err != nil {
 			log.Error("Couldn't save file:", err)
 		}
