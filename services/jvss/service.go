@@ -63,7 +63,6 @@ func (s *JVSSSig) Verify(suite abstract.Suite, public abstract.Point, msg []byte
 	h.Write(msg)
 	buff := h.Sum(nil)
 	hash := suite.Scalar().SetBytes(buff)
-
 	// RandomSecretCommit + H(...) * LongtermSecretCommit
 	right := suite.Point().Add(randomCommit, suite.Point().Mul(publicCommit, hash))
 	if !left.Equal(right) {
@@ -73,6 +72,9 @@ func (s *JVSSSig) Verify(suite abstract.Suite, public abstract.Point, msg []byte
 }
 
 func (s *Service) SignatureRequest(e *network.ServerIdentity, req *SignatureRequest) (network.Body, error) {
+	if(s.secret == nil) {
+		return nil, errors.New("Must run setup before signing.")
+	}
 	tree := req.Roster.GenerateBinaryTree()
 	log.Lvl2("Creating jvss round protocol instance")
 	pi, err := s.CreateProtocolSDA(JVSS_ROUND, tree)
@@ -82,8 +84,6 @@ func (s *Service) SignatureRequest(e *network.ServerIdentity, req *SignatureRequ
 	log.Lvl2("Getting root node")
 	root := pi.(*setup_and_round.JVSS_ROUND)
 	sig, err := root.Sign(req.Message)
-	log.Lvlf1("Signature random commit %s", sig.Random.SecretCommit())
-
 	jvssSig := &JVSSSig{
 		Signature: *sig.Signature,
 		Random:    sig.Random.SecretCommit(),
@@ -179,7 +179,6 @@ func newJVSSService(c *sda.Context, path string) sda.Service {
 		return setup_and_round.NewJVSS_setup(n, s.sharedSecretchan)
 	})
 	c.ProtocolRegister(JVSS_ROUND, func(n *sda.TreeNodeInstance) (sda.ProtocolInstance, error) {
-		log.Print(c.String(), "JVSS ROUND with secret", *s.secret.Share)
 		return setup_and_round.NewJVSS_round(n, s.secret)
 	})
 

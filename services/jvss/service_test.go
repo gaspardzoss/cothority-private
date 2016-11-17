@@ -1,16 +1,11 @@
 package jvss_service
 
 import (
-	"fmt"
 	"testing"
 
-	"bytes"
-
 	"github.com/dedis/cothority/log"
-	"github.com/dedis/cothority/network"
-	"github.com/dedis/cothority/protocols/jvss"
 	"github.com/dedis/cothority/sda"
-	"github.com/stretchr/testify/require"
+	"github.com/dedis/cothority/network"
 )
 
 func TestMain(m *testing.M) {
@@ -36,46 +31,7 @@ func TestJVSSService(t *testing.T) {
 	log.Lvl1("Sending setup request to service...")
 	pub, err := client.Setup(el)
 	log.ErrFatal(err, "Couldn't send")
-	pubB, err := (*pub).MarshalBinary()
-	log.ErrFatal(err, "Couldn't marshal pubkey")
-
 	log.Lvl1("Sending sign request to service...")
 	sig, err := client.Sign(el, msg)
-	log.ErrFatal(err, "Couldn't send")
-	require.NotNil(t, sig, "Sig was nil")
-	fmt.Println("SIGNATURE VERIFICATION : ", sig.Verify(network.Suite, *pub, msg))
-	//log.Lvlf1("Signature random commit %s", sig.Random.SecretCommit())
-	//sigR := sig.Random.SecretCommit()
-	//sigRB, err := sigR.MarshalBinary()
-	//log.ErrFatal(err, "Couldn't marshal random commit")
-	//sigB := sig.Signature
-	//sigSB, err := (*sigB).MarshalBinary()
-	//log.ErrFatal(err, "Couldn't marshal signature commit")
-	//
-	buffer := bytes.NewBuffer(nil)
-	jvss.SerializePubKey(buffer, pubB, "raph@raph.com")
-	if err != nil {
-		t.Fatal("Couldn't serialize public key: ", err)
-	}
-	//err = ioutil.WriteFile("testPubKey.pgp", buffer.Bytes(), 0644)
-	//if err != nil {
-	//	t.Fatal("Couldn't write public key: ", err)
-	//}
-	//log.Lvl1("Wrote public key file")
-	//buffer = bytes.NewBuffer(nil)
-	//err = jvss.SerializeSignature(buffer, msg, pubB, sigRB, sigSB)
-	//if err != nil {
-	//	t.Fatal("Couldn't serialize signature: ", err)
-	//}
-	//err = ioutil.WriteFile("text.sig", buffer.Bytes(), 0644)
-	//if err != nil {
-	//	t.Fatal("Couldn't write signature: ", err)
-	//}
-	//log.Lvl1("Wrote signature file")
-	//err = ioutil.WriteFile("text", msg, 0644)
-	//if err != nil {
-	//	t.Fatal("Couldn't write text file: ", err)
-	//}
-	//log.Lvl1("Wrote text file")
-
+	log.ErrFatal(sig.Verify(network.Suite, *pub, msg))
 }

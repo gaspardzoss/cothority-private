@@ -3,7 +3,6 @@ package jvss_service
 import (
 	"errors"
 
-	"github.com/dedis/cothority/log"
 	"github.com/dedis/cothority/network"
 	"github.com/dedis/cothority/sda"
 	"github.com/dedis/crypto/abstract"
@@ -55,7 +54,6 @@ func (c *Client) Sign(r *sda.Roster, msg []byte) (*JVSSSig, error) {
 		return nil, e
 	}
 	sig, ok := reply.Msg.(SignatureResponse)
-	log.Lvlf1("Signature random commit %s", sig.Signature.Random)
 	if !ok {
 		return nil, errors.New("Wrong return-type.")
 	}
