@@ -23,6 +23,8 @@ import (
 	"github.com/dedis/cothority/log"
 	"github.com/dedis/cothority/services/identity"
 	"gopkg.in/codegangsta/cli.v1"
+	"github.com/dedis/cothority/protocols/jvss"
+	"crypto/sha256"
 )
 
 func main() {
@@ -36,6 +38,7 @@ func main() {
 		commandKeyvalue,
 		commandSSH,
 		commandFollow,
+		commandPGP,
 	}
 	app.Flags = []cli.Flag{
 		cli.IntFlag{
@@ -94,7 +97,7 @@ func idConnect(c *cli.Context) error {
 	log.ErrFatal(err)
 	switch c.NArg() {
 	case 2:
-		// We'll get all arguments after
+	// We'll get all arguments after
 	case 3:
 		name = c.Args().Get(2)
 	default:
@@ -124,7 +127,7 @@ func idDel(c *cli.Context) error {
 	prop := cfg.GetProposed()
 	delete(prop.Device, dev)
 	for _, s := range cfg.Config.GetSuffixColumn("ssh", dev) {
-		delete(prop.Data, "ssh:"+dev+":"+s)
+		delete(prop.Data, "ssh:" + dev + ":" + s)
 	}
 	cfg.proposeSendVoteUpdate(prop)
 	return nil
@@ -260,12 +263,12 @@ func sshAdd(c *cli.Context) error {
 	if alias == "" {
 		alias = hostname
 	}
-	filePub := path.Join(sshDir, "key_"+alias+".pub")
+	filePub := path.Join(sshDir, "key_" + alias + ".pub")
 	idPriv := "key_" + alias
 	filePriv := path.Join(sshDir, idPriv)
 	log.ErrFatal(makeSSHKeyPair(c.Int("sec"), filePub, filePriv))
-	host := NewSSHHost(alias, "HostName "+hostname,
-		"IdentityFile "+filePriv)
+	host := NewSSHHost(alias, "HostName " + hostname,
+		"IdentityFile " + filePriv)
 	if port := c.String("p"); port != "" {
 		host.AddConfig("Port " + port)
 	}
@@ -320,7 +323,7 @@ func sshDel(c *cli.Context) error {
 	err = ioutil.WriteFile(sshConfig, []byte(sc.String()), 0600)
 	log.ErrFatal(err)
 	prop := cfg.GetProposed()
-	delete(prop.Data, "ssh:"+cfg.DeviceName+":"+host)
+	delete(prop.Data, "ssh:" + cfg.DeviceName + ":" + host)
 	cfg.proposeSendVoteUpdate(prop)
 	return cfg.saveConfig(c)
 }
@@ -396,4 +399,75 @@ func followUpdate(c *cli.Context) error {
 	}
 	cfg.writeAuthorizedKeys(c)
 	return cfg.saveConfig(c)
+}
+
+func pgpSetup(c *cli.Context) error {
+	log.Lvl1("In pgpSetup")
+	cfg := loadConfigOrFail(c)
+	if c.NArg() < 1 {
+		log.Fatal("Please give id (email) of pgp key and optionally a directory to save the public key")
+	}
+	pubKey, err := cfg.SetupPGP()
+	log.ErrFatal(err)
+	pubKeyB, err := (*pubKey).MarshalBinary()
+	log.ErrFatal(err)
+	buffer := bytes.NewBuffer(nil)
+	id := c.Args().First()
+	jvss.SerializePubKeyToArmor(buffer, pubKeyB, id)
+	keyFile := c.String("o")
+	if (keyFile != "") {
+		keyFile += "/"
+	}
+	keyFile += "publicKey"
+	key := strings.Join([]string{"pgp", id}, ":")
+	prop := cfg.GetProposed()
+	prop.Data[key] = strings.TrimSpace(string(buffer.Bytes()))
+	if (!c.Bool("arm")) {
+		buffer.Reset()
+		jvss.SerializePubKey(buffer, pubKeyB, id)
+		keyFile += ".pgp"
+	} else {
+		keyFile += ".asc"
+	}
+	err = ioutil.WriteFile(keyFile, buffer.Bytes(), 0600)
+	log.ErrFatal(err)
+	cfg.proposeSendVoteUpdate(prop)
+	return cfg.saveConfig(c)
+}
+
+func pgpPublic(c *cli.Context) error {
+	return nil
+}
+
+func pgpSign(c *cli.Context) error {
+	cfg := loadConfigOrFail(c)
+	if c.NArg() < 2 {
+		log.Fatal("Please give an id (email) and a file (containing the message)")
+	}
+	messageFile := c.Args().First()
+	id := c.Args().Get(1)
+	messageFileContent, err := ioutil.ReadFile(messageFile)
+	log.ErrFatal(err)
+	messageHash := jvss.HashMessage(sha256.New(), messageFileContent)
+	sig, err := cfg.SignMessage(messageHash)
+	log.ErrFatal(err)
+	sigRB, err := sig.Random.MarshalBinary()
+	log.ErrFatal(err)
+	sigSB, err := sig.Signature.MarshalBinary()
+	pubKeyRaw := []byte(cfg.Config.GetValue("pgp", id))
+	pubKey, err := jvss.DeSerializeArmoredPubKey(bytes.NewReader(pubKeyRaw))
+	log.ErrFatal(err)
+	buffer := bytes.NewBuffer(nil)
+	sigFile := messageFile
+	if (c.Bool("arm")) {
+		err = jvss.SerializeSignatureToArmor(buffer, messageHash, pubKey, sigRB, sigSB)
+		sigFile += ".asc"
+	} else {
+		err = jvss.SerializeSignature(buffer, messageHash, pubKey, sigRB, sigSB)
+		sigFile += ".sig"
+	}
+	log.ErrFatal(err)
+	err = ioutil.WriteFile(sigFile, buffer.Bytes(), 0600)
+	log.ErrFatal(err)
+	return nil
 }

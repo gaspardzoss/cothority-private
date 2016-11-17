@@ -6,7 +6,7 @@ import "gopkg.in/codegangsta/cli.v1"
 This holds the cli-commands so the main-file is less cluttered.
 */
 
-var commandID, commandConfig, commandKeyvalue, commandSSH, commandFollow cli.Command
+var commandID, commandConfig, commandKeyvalue, commandSSH, commandFollow, commandPGP cli.Command
 
 func init() {
 	commandID = cli.Command{
@@ -232,6 +232,59 @@ func init() {
 					},
 				},
 				Action: followUpdate,
+			},
+		},
+	}
+
+	commandPGP = cli.Command{
+		Name:  "pgp",
+		Usage: "handling a pgp key",
+		Subcommands: []cli.Command{
+			{
+				Name:    "setup",
+				Aliases: []string{"st"},
+				ArgsUsage: "PGP id (email)",
+				Usage:   "Setup a new PGP key, warning this will erase any previously create key, use carefully",
+				Flags: []cli.Flag{
+					cli.StringFlag{
+						Name:  "o,output",
+						Usage: "Write private key to" ,
+					},
+					cli.BoolFlag{
+						Name: "arm,armor",
+						Usage: "Public key in armor ASCII format",
+					},
+				},
+				Action: pgpSetup,
+			},
+			{
+				Name:    "public",
+				Aliases: []string{"pub"},
+				Usage:   "Get the public key from skipchain",
+				Flags: []cli.Flag{
+					cli.StringFlag{
+						Name:  "o,output",
+						Usage: "Write public key to" ,
+					},
+					cli.BoolFlag{
+						Name: "arm,armor",
+						Usage: "Signature in armor ASCII format",
+					},
+				},
+				Action: pgpSetup,
+			},
+			{
+				Name: "sign",
+				Aliases: []string{"si"},
+				Usage:	"Sign a message with cothority and id",
+				ArgsUsage: "id message",
+				Flags: []cli.Flag{
+					cli.BoolFlag{
+						Name: "arm,armor",
+						Usage: "Signature in armor ASCII format",
+					},
+				},
+				Action: pgpSign,
 			},
 		},
 	}

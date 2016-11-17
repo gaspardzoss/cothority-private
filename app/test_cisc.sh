@@ -15,6 +15,8 @@ NBR=4
 main(){
     startTest
     build
+    test pgpSetup
+    test pgpSign
 	test Build
 	test ClientSetup
 	test IdCreate
@@ -32,6 +34,39 @@ main(){
     stopTest
 }
 
+testpgpSetup(){
+	clientSetup 3
+	testOK runCl 3 pgp setup test@test.com -o cl3
+	testFile cl3/publicKey.pgp
+	testOK runCl 1 config vote y
+	testOK runCl 2 config vote y
+	testFileGrep "pgp:test@test.com" cl1/config.bin
+	testOK runCl 1 pgp setup test2@test.com -o cl1 -arm
+	testFile cl1/publicKey.asc
+	testOK runCl 2 config vote y
+	testOK runCl 3 config vote y
+	testFileGrep "pgp:test2@test.com" cl2/config.bin
+}
+
+testpgpSign() {
+    echo "Hello World" > text
+	clientSetup 1
+	testOK runCl 1 pgp setup test@test.com -o cl1
+	testFile cl1/config.bin
+	testFileGrep "pgp:test@test.com" cl1/config.bin
+    testOK runCl 1 pgp sign text "test@test.com"
+    testFile text.sig
+    testOK runCl 1 pgp sign text "test@test.com" -arm
+    testFile text.asc
+#    We check if gpg with eddsa support is installed
+    gpg2 --version | grep -i eddsa > /dev/null
+    if [ $? -eq 0 ]; then
+        mkdir gnupg
+        testOK gpg2 --homedir gnupg --allow-non-selfsigned-uid --quiet --no-permission-warning --import cl1/publicKey.pgp
+        testOK gpg2 --homedir gnupg --allow-non-selfsigned-uid --ignore-time-conflict --no-permission-warning  --verify text.sig text
+        testOK gpg2 --homedir gnupg --allow-non-selfsigned-uid --ignore-time-conflict --no-permission-warning  --verify text.asc text
+    fi
+}
 testRevoke(){
 	clientSetup 3
 	testOK runCl 3 ssh add service1
