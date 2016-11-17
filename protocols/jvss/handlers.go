@@ -5,7 +5,7 @@ import (
 
 	"github.com/dedis/cothority/log"
 	"github.com/dedis/cothority/sda"
-	"github.com/dedis/crypto/poly"
+	"github.com/sriak/crypto/poly"
 )
 
 // SecInitMsg are used to initialise new shared secrets both long- and
