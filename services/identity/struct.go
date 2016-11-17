@@ -13,6 +13,7 @@ import (
 	"github.com/dedis/cothority/sda"
 	"github.com/dedis/cothority/services/skipchain"
 	"github.com/dedis/crypto/abstract"
+	"github.com/dedis/cothority/services/jvss"
 )
 
 // How many msec to wait before a timeout is generated in the propagation
@@ -172,7 +173,7 @@ func sortUniq(slice []string) []string {
 	sort.Strings(sorted)
 	var ret []string
 	for i, s := range sorted {
-		if i == 0 || s != sorted[i-1] {
+		if i == 0 || s != sorted[i - 1] {
 			ret = append(ret, s)
 		}
 	}
@@ -247,4 +248,23 @@ type PropagateIdentity struct {
 type UpdateSkipBlock struct {
 	ID     ID
 	Latest *skipchain.SkipBlock
+}
+
+type SetupPGP struct {
+	ID ID
+}
+
+type SetupPGPReply struct {
+	PublicKey *abstract.Point
+}
+
+type SignMessage struct {
+	ID        ID
+	Signer    string
+	Msg       []byte
+	Signature *crypto.SchnorrSig
+}
+
+type SignMessageReply struct {
+	Signature *jvss_service.JVSSSig
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/dedis/cothority/protocols/manage"
 	"github.com/dedis/cothority/sda"
 	"github.com/dedis/cothority/services/skipchain"
+	"github.com/dedis/cothority/services/jvss"
 )
 
 // ServiceName can be used to refer to the name of this service
@@ -48,6 +49,7 @@ type Service struct {
 	propagateConfig    manage.PropagationFunc
 	identitiesMutex    sync.Mutex
 	skipchain          *skipchain.Client
+	jvss               *jvss_service.Client
 	path               string
 }
 
@@ -237,6 +239,59 @@ func (s *Service) ProposeVote(si *network.ServerIdentity, v *ProposeVote) (netwo
 	return nil, nil
 }
 
+func (s *Service) SignMessage(si *network.ServerIdentity, req *SignMessage) (network.Body, error) {
+	// First verify if the signature is legitimate
+	sid := s.getIdentityStorage(req.ID)
+	if sid == nil {
+		return nil, errors.New("Didn't find identity")
+	}
+
+	// Putting this in a function because of the lock which needs to be held
+	// over all calls that might return an error.
+	err := func() error {
+		sid.Lock()
+		defer sid.Unlock()
+		owner, ok := sid.Latest.Device[req.Signer]
+		if !ok {
+			return errors.New("Didn't find signer")
+		}
+		network.Suite.Hash().Reset()
+		if n, err := network.Suite.Hash().Write(req.Msg);
+			err != nil || n != len(req.Msg) {
+			return err
+		}
+		hash := network.Suite.Hash().Sum(nil)
+		if req.Signature != nil {
+			err := crypto.VerifySchnorr(network.Suite, owner.Point, hash, *req.Signature)
+			if err != nil {
+				return errors.New("Wrong signature: " + err.Error())
+			}
+		}
+		return nil
+	}()
+	if err != nil {
+		return nil, err
+	}
+	sig, err := s.jvss.Sign(sid.Root.Roster, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return &SignMessageReply{sig}, nil
+}
+
+func (s *Service) SetupPGP(si *network.ServerIdentity, req *SetupPGP) (network.Body, error) {
+	// First verify if the ID exists
+	sid := s.getIdentityStorage(req.ID)
+	if sid == nil {
+		return nil, errors.New("Didn't find identity")
+	}
+	pubKey, err := s.jvss.Setup(sid.Root.Roster)
+	if err != nil {
+		return nil, err
+	}
+	return &SetupPGPReply{pubKey}, nil
+}
+
 /*
  * Internal messages
  */
@@ -351,7 +406,7 @@ func (s *Service) save() {
 	if err != nil {
 		log.Error("Couldn't marshal service:", err)
 	} else {
-		err = ioutil.WriteFile(s.path+"/identity.bin", b, 0660)
+		err = ioutil.WriteFile(s.path + "/identity.bin", b, 0660)
 		if err != nil {
 			log.Error("Couldn't save file:", err)
 		}
@@ -386,6 +441,7 @@ func newIdentityService(c *sda.Context, path string) sda.Service {
 		ServiceProcessor: sda.NewServiceProcessor(c),
 		StorageMap:       &StorageMap{make(map[string]*Storage)},
 		skipchain:        skipchain.NewClient(),
+		jvss:          jvss_service.NewClient(),
 		path:             path,
 	}
 	var err error
@@ -408,7 +464,8 @@ func newIdentityService(c *sda.Context, path string) sda.Service {
 		log.Error(err)
 	}
 	for _, f := range []interface{}{s.ProposeSend, s.ProposeVote,
-		s.CreateIdentity, s.ProposeUpdate, s.ConfigUpdate} {
+		s.CreateIdentity, s.ProposeUpdate, s.ConfigUpdate, s.SetupPGP,
+		s.SignMessage} {
 		if err := s.RegisterMessage(f); err != nil {
 			log.Fatal("Registration error:", err)
 		}

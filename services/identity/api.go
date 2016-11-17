@@ -12,6 +12,7 @@ import (
 	"github.com/dedis/cothority/sda"
 	"github.com/dedis/crypto/abstract"
 	"github.com/dedis/crypto/config"
+	"github.com/dedis/cothority/services/jvss"
 )
 
 /*
@@ -39,6 +40,10 @@ func init() {
 		&ProposeVote{},
 		&Data{},
 		&ProposeVoteReply{},
+		&SetupPGP{},
+		&SetupPGPReply{},
+		&SignMessage{},
+		&SignMessageReply{},
 		// Internal messages
 		&PropagateIdentity{},
 		&UpdateSkipBlock{},
@@ -62,21 +67,21 @@ type Identity struct {
 // that enables a client to use the Identity service.
 type Data struct {
 	// Private key for that device.
-	Private abstract.Scalar
+	Private    abstract.Scalar
 	// Public key for that device - will be stored in the identity-skipchain.
-	Public abstract.Point
+	Public     abstract.Point
 	// ID of the skipchain this device is tied to.
-	ID ID
+	ID         ID
 	// Config is the actual, valid configuration of the identity-skipchain.
-	Config *Config
+	Config     *Config
 	// Proposed is the new configuration that has not been validated by a
 	// threshold of devices.
-	Proposed *Config
+	Proposed   *Config
 	// DeviceName must be unique in the identity-skipchain.
 	DeviceName string
 	// Cothority is the roster responsible for the identity-skipchain. It
 	// might change in the case of a roster-update.
-	Cothority *sda.Roster
+	Cothority  *sda.Roster
 }
 
 // NewIdentity starts a new identity that can contain multiple managers with
@@ -253,4 +258,41 @@ func (i *Identity) ConfigUpdate() error {
 	// TODO - verify new config
 	i.Config = cu.Config
 	return nil
+}
+
+func (i *Identity) SignMessage(message []byte) (*jvss_service.JVSSSig, error) {
+	network.Suite.Hash().Reset()
+	if n, err := network.Suite.Hash().Write(message); err != nil || n != len(message) {
+		return nil, err
+	}
+	hash := network.Suite.Hash().Sum(nil)
+	network.Suite.Hash().Reset()
+	sig, err := crypto.SignSchnorr(network.Suite, i.Private, hash)
+	if err != nil {
+		return nil, err
+	}
+	msg, err := i.Client.Send(i.Cothority.RandomServerIdentity(),
+		&SignMessage{
+			ID: i.ID,
+			Signer: i.DeviceName,
+			Msg: message,
+			Signature: &sig,
+		})
+	if err != nil {
+		return nil, err
+	}
+	signatureMsg := msg.Msg.(SignMessageReply)
+	return signatureMsg.Signature, nil
+}
+
+func (i *Identity) SetupPGP() (*abstract.Point, error) {
+	if i.Cothority == nil || len(i.Cothority.List) == 0 {
+		return nil, errors.New("Didn't find any list in the cothority")
+	}
+	msg, err := i.Client.Send(i.Cothority.RandomServerIdentity(), &SetupPGP{ID: i.ID})
+	if err != nil {
+		return nil, err
+	}
+	resp := msg.Msg.(SetupPGPReply)
+	return resp.PublicKey, nil
 }
