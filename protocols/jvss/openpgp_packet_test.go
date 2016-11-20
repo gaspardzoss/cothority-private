@@ -10,6 +10,9 @@ import (
 
 	"github.com/dedis/cothority/log"
 	"github.com/dedis/cothority/sda"
+	"github.com/sriak/crypto-1/openpgp/packet"
+	"time"
+	"github.com/dedis/cothority/services/jvss"
 )
 
 var pubKey, _ = hex.DecodeString("d2a4f14e5d960f25117b36fb566254ab6a0371369de59e0b57bbbb62d6205cd8")
@@ -33,7 +36,7 @@ func TestPubKey(t *testing.T) {
 
 func TestSignature(t *testing.T) {
 	buffer := bytes.NewBuffer(nil)
-	err := SerializeSignature(buffer, data, pubKey, R, S)
+	err := SerializeSig(buffer, data, pubKey, R, S)
 	if err != nil {
 		t.Fatal("Couldn't serialize signature: ", err)
 	}
@@ -73,6 +76,7 @@ func TestJVSSPubKeyAndSignature(t *testing.T) {
 
 	log.Lvl1("JVSS - starting round")
 	log.Lvl1("JVSS - requesting signature")
+
 	sig, err := jv.Sign(msg)
 	if err != nil {
 		t.Fatal("Error signature failed", err)
@@ -90,16 +94,52 @@ func TestJVSSPubKeyAndSignature(t *testing.T) {
 	if err != nil {
 		t.Fatal("Couldn't get longterm secret :", err)
 	}
-	secPubB, err := sec.secret.Pub.SecretCommit().MarshalBinary()
+	secPub := sec.secret.Pub.SecretCommit()
+
+	secPubB, err := secPub.MarshalBinary()
+
 	buffer := bytes.NewBuffer(nil)
+	creationTime := time.Now()
+	pub := packet.NewEdDSAPublicKey(creationTime, &secPub)
+	//err = pub.Serialize(buffer)
+	//log.ErrFatal(err)
+
+	message := "Hello world"
+	signData, err := SignatureDataToSign(message, &pub.KeyId, creationTime)
+	log.ErrFatal(err)
+	sigMessage, err := jv.Sign(signData)
+	log.ErrFatal(err)
+	err = SerializeSignatureToArmor(
+		buffer,
+		&jvss_service.JVSSSig{
+			Signature:*sigMessage.Signature,
+			Random:sigMessage.Random.SecretCommit()},
+		&pub.KeyId,
+		creationTime)
+	err = ioutil.WriteFile("textOpenPgp.asc", buffer.Bytes(), 0644)
+
+	buffer.Reset()
+	userId := packet.NewUserId("", "", "raph@raph.com")
+	sigIDB, err := PublicKeyDataToSign(&secPub, userId, creationTime)
+	log.ErrFatal(err)
+	sigId, err := jv.Sign(sigIDB)
+	log.ErrFatal(err)
+
+	err = SerializePublicKeyToArmor(buffer, &secPub, &jvss_service.JVSSSig{Signature:*sigId.Signature, Random:sigId.Random.SecretCommit()}, userId, creationTime)
+	log.ErrFatal(err)
+	err = ioutil.WriteFile("pubKeyOpenPGP.asc", buffer.Bytes(), 0644)
+	log.ErrFatal(err)
+
+	secPubBDeserialized, err := DeSerializePubKey(bytes.NewReader(buffer.Bytes()))
+	log.Lvl1(hex.EncodeToString(secPubBDeserialized))
+	buffer.Reset()
 	err = SerializePubKey(buffer, secPubB, "raph@raph.com")
 	if err != nil {
 		t.Fatal("Couldn't serialize public key: ", err)
 	}
-	secPubBDeserialized, err := DeSerializePubKey(bytes.NewReader(buffer.Bytes()))
-
+	secPubBDeserialized, err = DeSerializePubKey(bytes.NewReader(buffer.Bytes()))
 	log.ErrFatal(err)
-	if(!bytes.Equal(secPubB,secPubBDeserialized)) {
+	if (!bytes.Equal(secPubB, secPubBDeserialized)) {
 		t.Fatal("Deserialized didn't work")
 	}
 	err = ioutil.WriteFile("testPubKeyJVSS.pgp", buffer.Bytes(), 0644)
@@ -114,18 +154,17 @@ func TestJVSSPubKeyAndSignature(t *testing.T) {
 	}
 	secPubArmorBDeserialized, err := DeSerializeArmoredPubKey(bytes.NewReader(buffer.Bytes()))
 	log.ErrFatal(err)
-	if(!bytes.Equal(secPubB,secPubArmorBDeserialized)) {
+	if (!bytes.Equal(secPubB, secPubArmorBDeserialized)) {
 		t.Fatal("Deserialized didn't work")
 	}
 	err = ioutil.WriteFile("testPubKeyJVSS.asc", buffer.Bytes(), 0644)
 	log.Lvl1("Wrote public key file to armor")
 
-
 	r, _ := sig.Random.SecretCommit().MarshalBinary()
 	s, _ := (*sig.Signature).MarshalBinary()
 
 	buffer.Reset()
-	err = SerializeSignature(buffer, msg, secPubB, r, s)
+	err = SerializeSig(buffer, msg, secPubB, r, s)
 	if err != nil {
 		t.Fatal("Couldn't serialize signature: ", err)
 	}
@@ -135,7 +174,7 @@ func TestJVSSPubKeyAndSignature(t *testing.T) {
 	}
 	log.Lvl1("Wrote signature file")
 	buffer.Reset()
-	err = SerializeSignatureToArmor(buffer, msg, secPubB, r, s)
+	err = SerializeSigToArmor(buffer, msg, secPubB, r, s)
 	if err != nil {
 		t.Fatal("Couldn't serialize signature: ", err)
 	}

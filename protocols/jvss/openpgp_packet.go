@@ -8,6 +8,11 @@ import (
 	"io"
 	"github.com/btcsuite/golangcrypto/openpgp/armor"
 	"io/ioutil"
+	"github.com/dedis/crypto/abstract"
+	"github.com/sriak/crypto-1/openpgp/packet"
+	"time"
+	"crypto"
+	"github.com/dedis/cothority/services/jvss"
 )
 
 const PubKeyAlgoEDDSA = 22
@@ -51,7 +56,7 @@ func HashMessage(h hash.Hash, msg []byte) []byte {
 
 // Serializes into the given writer the signature from the pubkey, the input
 // data and the point R and the integer S cf. RFC 4880 section 5.2
-func SerializeSignature(w io.Writer, data, pubKey, r, s []byte) (err error) {
+func SerializeSig(w io.Writer, data, pubKey, r, s []byte) (err error) {
 	// We prepend the pubKey with 0x40 to indicate that it is compressed cf.
 	// https://tools.ietf.org/html/draft-ietf-openpgp-rfc4880bis-00#section-13.3
 	pubKey = append([]byte{0x40}, pubKey...)
@@ -73,12 +78,12 @@ func SerializeSignature(w io.Writer, data, pubKey, r, s []byte) (err error) {
 	return
 }
 
-func SerializeSignatureToArmor(w io.Writer, data, pubKey, r, s []byte) (err error) {
+func SerializeSigToArmor(w io.Writer, data, pubKey, r, s []byte) (err error) {
 	writer, err := armor.Encode(w, "PGP SIGNATURE", nil)
 	if err != nil {
 		return
 	}
-	err = SerializeSignature(writer, data, pubKey, r, s)
+	err = SerializeSig(writer, data, pubKey, r, s)
 	if err != nil {
 		return
 	}
@@ -302,4 +307,125 @@ func keyID(pubKey []byte) (id []byte) {
 	fingerPrint.Write([]byte{0x99, byte(length >> 8), byte(length)})
 	serializePubKeyWithoutHeader(fingerPrint, pubKey)
 	return fingerPrint.Sum(nil)[12:20]
+}
+
+func PublicKeyDataToSign(publicKey *abstract.Point, userId *packet.UserId, creationTime time.Time) ([]byte, error) {
+	pub := packet.NewEdDSAPublicKey(creationTime, publicKey)
+	hash, err := packet.UserIdSignatureHash(userId.Id, pub, crypto.SHA256)
+	if err != nil {
+		return nil, err
+	}
+	signaturePacket := &packet.Signature{
+		SigType: packet.SigTypeGenericCert,
+		PubKeyAlgo: PubKeyAlgoEDDSA,
+		Hash: crypto.SHA256,
+		CreationTime: time.Now(),
+		IssuerKeyId: &pub.KeyId,
+	}
+	sigIdB, err := signaturePacket.GetSignPrepareHash(hash)
+	if err != nil {
+		return nil, err
+	}
+	return sigIdB, nil
+}
+
+func SerializePublicKey(w io.Writer, publicKey *abstract.Point, signature *jvss_service.JVSSSig, userId *packet.UserId, creationTime time.Time) error {
+	pub := packet.NewEdDSAPublicKey(creationTime, publicKey)
+	if err := pub.Serialize(w); err != nil {
+		return err
+	}
+	if err := userId.Serialize(w); err != nil {
+		return err
+	}
+	signaturePacket := &packet.Signature{
+		SigType: packet.SigTypeGenericCert,
+		PubKeyAlgo: PubKeyAlgoEDDSA,
+		Hash: crypto.SHA256,
+		CreationTime: time.Now(),
+		IssuerKeyId: &pub.KeyId,
+	}
+	if _, err := signaturePacket.GetSignPrepareHash(sha256.New()); err != nil {
+		return err
+	}
+	rId, err := signature.Random.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	sId, err := signature.Signature.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	signaturePacket.SetEddsaField(rId, sId)
+	if err := signaturePacket.Serialize(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func SerializePublicKeyToArmor(w io.Writer, publicKey *abstract.Point, signature *jvss_service.JVSSSig, userId *packet.UserId, creationTime time.Time) error {
+	writer, err := armor.Encode(w, "PGP PUBLIC KEY BLOCK", nil)
+	if err != nil {
+		return err
+	}
+	err = SerializePublicKey(writer, publicKey,signature,userId,creationTime)
+	if err != nil {
+		return err
+	}
+	writer.Close()
+	return nil
+}
+
+func SignatureDataToSign(message string, keyId *uint64, creationTime time.Time) ([]byte, error) {
+	messagesBinary := bytes.NewBufferString(message)
+	sigMessagePacket := packet.Signature{
+		SigType: packet.SigTypeBinary,
+		PubKeyAlgo: packet.PubKeyAlgoEdDSA,
+		Hash: crypto.SHA256,
+		CreationTime: creationTime,
+		IssuerKeyId: keyId,
+	}
+	h := sigMessagePacket.Hash.New()
+	if _, err := io.Copy(h,messagesBinary); err != nil {
+		return nil,err
+	}
+	return sigMessagePacket.GetSignPrepareHash(h)
+}
+
+func SerializeSignature(w io.Writer, signature *jvss_service.JVSSSig, keyId *uint64, creationTime time.Time) error {
+	sigMessagePacket := packet.Signature{
+		SigType: packet.SigTypeBinary,
+		PubKeyAlgo: packet.PubKeyAlgoEdDSA,
+		Hash: crypto.SHA256,
+		CreationTime: creationTime,
+		IssuerKeyId: keyId,
+	}
+	if _, err := sigMessagePacket.GetSignPrepareHash(sha256.New()); err != nil {
+		return err
+	}
+	rId, err := signature.Random.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	sId, err := signature.Signature.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	sigMessagePacket.SetEddsaField(rId, sId)
+	if err := sigMessagePacket.Serialize(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func SerializeSignatureToArmor(w io.Writer, signature *jvss_service.JVSSSig, keyId *uint64, creationTime time.Time) error {
+	writer, err := armor.Encode(w, "PGP SIGNATURE", nil)
+	if err != nil {
+		return err
+	}
+	err = SerializeSignature(writer,signature,keyId,creationTime)
+	if err != nil {
+		return err
+	}
+	writer.Close()
+	return nil
 }
