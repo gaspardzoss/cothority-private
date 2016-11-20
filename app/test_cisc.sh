@@ -50,21 +50,23 @@ testpgpSetup(){
 
 testpgpSign() {
     echo "Hello World" > text
-	clientSetup 1
-	testOK runCl 1 pgp setup test@test.com -o cl1
+	clientSetup 3
+	testOK runCl 3 pgp setup test@test.com -o cl3
+	testOK runCl 1 config vote y
+	testOK runCl 2 config vote y
 	testFile cl1/config.bin
 	testFileGrep "pgp:test@test.com" cl1/config.bin
     testOK runCl 1 pgp sign text "test@test.com"
     testFile text.sig
-    testOK runCl 1 pgp sign text "test@test.com" -arm
+    testOK runCl 2 pgp sign text "test@test.com" -arm
     testFile text.asc
 #    We check if gpg with eddsa support is installed
     gpg2 --version | grep -i eddsa > /dev/null
     if [ $? -eq 0 ]; then
         mkdir gnupg
-        testOK gpg2 --homedir gnupg --allow-non-selfsigned-uid --quiet --no-permission-warning --import cl1/publicKey.pgp
-        testOK gpg2 --homedir gnupg --allow-non-selfsigned-uid --ignore-time-conflict --no-permission-warning  --verify text.sig text
-        testOK gpg2 --homedir gnupg --allow-non-selfsigned-uid --ignore-time-conflict --no-permission-warning  --verify text.asc text
+        testOK gpg2 --homedir gnupg --no-permission-warning --import cl3/publicKey.pgp
+        testOK gpg2 --homedir gnupg --no-permission-warning  --verify text.sig text
+        testOK gpg2 --homedir gnupg --no-permission-warning  --verify text.asc text
     fi
 }
 testRevoke(){

@@ -24,7 +24,9 @@ import (
 	"github.com/dedis/cothority/services/identity"
 	"gopkg.in/codegangsta/cli.v1"
 	"github.com/dedis/cothority/protocols/jvss"
-	"crypto/sha256"
+	"time"
+	"github.com/sriak/crypto-1/openpgp/packet"
+	"github.com/btcsuite/golangcrypto/openpgp/armor"
 )
 
 func main() {
@@ -407,24 +409,29 @@ func pgpSetup(c *cli.Context) error {
 	if c.NArg() < 1 {
 		log.Fatal("Please give id (email) of pgp key and optionally a directory to save the public key")
 	}
+	id := packet.NewUserId("", "", c.Args().First())
 	pubKey, err := cfg.SetupPGP()
 	log.ErrFatal(err)
-	pubKeyB, err := (*pubKey).MarshalBinary()
+	creationTime := time.Now()
+	keyData, err := jvss.PublicKeyDataToSign(pubKey, id, creationTime)
+	log.ErrFatal(err)
+	sig, err := cfg.SignMessage(keyData)
 	log.ErrFatal(err)
 	buffer := bytes.NewBuffer(nil)
-	id := c.Args().First()
-	jvss.SerializePubKeyToArmor(buffer, pubKeyB, id)
+	err = jvss.SerializePublicKeyToArmor(buffer, pubKey, sig, id, creationTime)
+	log.ErrFatal(err)
 	keyFile := c.String("o")
 	if (keyFile != "") {
 		keyFile += "/"
 	}
 	keyFile += "publicKey"
-	key := strings.Join([]string{"pgp", id}, ":")
+	key := strings.Join([]string{"pgp", id.Email}, ":")
 	prop := cfg.GetProposed()
 	prop.Data[key] = strings.TrimSpace(string(buffer.Bytes()))
 	if (!c.Bool("arm")) {
 		buffer.Reset()
-		jvss.SerializePubKey(buffer, pubKeyB, id)
+		err = jvss.SerializePublicKey(buffer, pubKey, sig, id, creationTime)
+		log.ErrFatal(err)
 		keyFile += ".pgp"
 	} else {
 		keyFile += ".asc"
@@ -446,24 +453,27 @@ func pgpSign(c *cli.Context) error {
 	}
 	messageFile := c.Args().First()
 	id := c.Args().Get(1)
-	messageFileContent, err := ioutil.ReadFile(messageFile)
+	pubKeyRaw := []byte(cfg.Config.GetValue("pgp", id))
+	block, err := armor.Decode(bytes.NewReader(pubKeyRaw))
 	log.ErrFatal(err)
-	messageHash := jvss.HashMessage(sha256.New(), messageFileContent)
+	keyId, err := packet.ReadKeyId(block.Body)
+	log.ErrFatal(err)
+	messageFileContentBinary, err := ioutil.ReadFile(messageFile)
+	log.ErrFatal(err)
+	messageFileContent := string(messageFileContentBinary)
+	creationTime := time.Now()
+	messageHash, err := jvss.SignatureDataToSign(messageFileContent, &keyId, creationTime)
+	log.ErrFatal(err)
 	sig, err := cfg.SignMessage(messageHash)
 	log.ErrFatal(err)
-	sigRB, err := sig.Random.MarshalBinary()
-	log.ErrFatal(err)
-	sigSB, err := sig.Signature.MarshalBinary()
-	pubKeyRaw := []byte(cfg.Config.GetValue("pgp", id))
-	pubKey, err := jvss.DeSerializeArmoredPubKey(bytes.NewReader(pubKeyRaw))
-	log.ErrFatal(err)
+
 	buffer := bytes.NewBuffer(nil)
 	sigFile := messageFile
 	if (c.Bool("arm")) {
-		err = jvss.SerializeSignatureToArmor(buffer, messageHash, pubKey, sigRB, sigSB)
+		err = jvss.SerializeSignatureToArmor(buffer, sig, &keyId, creationTime)
 		sigFile += ".asc"
 	} else {
-		err = jvss.SerializeSignature(buffer, messageHash, pubKey, sigRB, sigSB)
+		err = jvss.SerializeSignature(buffer, sig, &keyId, creationTime)
 		sigFile += ".sig"
 	}
 	log.ErrFatal(err)
