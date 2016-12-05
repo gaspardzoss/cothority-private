@@ -70,5 +70,5 @@ func (r *Repository) AddPackage(packageString string) {
 }
 
 func (r *Repository) GetName() string {
-	return r.Origin + " " + r.Suite
+	return r.Origin + "-" + r.Suite
 }

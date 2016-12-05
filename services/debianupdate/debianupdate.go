@@ -35,11 +35,11 @@ func init() {
 // DebianUpdate service
 type DebianUpdate struct {
 	*sda.ServiceProcessor
-	path      string
-	Storage   *storage
-	skipchain *skipchain.Client
-	sync.Mutex
+	path           string
+	Storage        *storage
+	skipchain      *skipchain.Client
 	ReasonableTime time.Duration
+	sync.Mutex
 }
 
 type storage struct {
