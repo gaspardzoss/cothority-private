@@ -1,0 +1,6 @@
+Description = "Description of your cothority roster"
+
+[[servers]]
+  Addresses = ["127.0.0.1:6879"]
+  Public = "WrCf+k/r7aUPcfHS22JKDw/VSFiflJu/7VJXnMnlIrU="
+  Description = "Description of your server"

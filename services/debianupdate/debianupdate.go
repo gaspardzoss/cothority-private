@@ -1,0 +1,314 @@
+package debianupdate
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/binary"
+	"github.com/dedis/cothority/crypto"
+	"github.com/dedis/cothority/log"
+	"github.com/dedis/cothority/monitor"
+	"github.com/dedis/cothority/network"
+	"github.com/dedis/cothority/protocols/manage"
+	"github.com/dedis/cothority/protocols/swupdate"
+	"github.com/dedis/cothority/sda"
+	"github.com/dedis/cothority/services/skipchain"
+	"github.com/satori/go.uuid"
+	"sort"
+	"sync"
+	"time"
+)
+
+// ServiceName is the name to refer to the CoSi service
+const ServiceName = "DebianUpdate"
+
+var debianUpdateService sda.ServiceID
+
+var verifierID = skipchain.VerifierID(uuid.NewV5(uuid.NamespaceURL, ServiceName))
+
+func init() {
+	sda.RegisterNewService(ServiceName, NewDebianUpdate)
+	debianUpdateService = sda.ServiceFactory.ServiceID(ServiceName)
+	network.RegisterPacketType(&storage{})
+	skipchain.VerificationRegistration(verifierID, verifierFunc)
+}
+
+// DebianUpdate service
+type DebianUpdate struct {
+	*sda.ServiceProcessor
+	path      string
+	Storage   *storage
+	skipchain *skipchain.Client
+	sync.Mutex
+	ReasonableTime time.Duration
+}
+
+type storage struct {
+	Timestamp              *Timestamp
+	RepositoryChainGenesis map[string]*RepositoryChain // the first block of the *string* repo
+	RepositoryChain        map[string]*RepositoryChain // the latest block
+	Root                   *skipchain.SkipBlock        // the root skipchain
+	TSInterval             time.Duration               // the interval between Timestamps
+}
+
+func NewDebianUpdate(context *sda.Context, path string) sda.Service {
+	service := &DebianUpdate{
+		ServiceProcessor: sda.NewServiceProcessor(context),
+		path:             path,
+		skipchain:        skipchain.NewClient(),
+		Storage: &storage{
+			RepositoryChainGenesis: map[string]*RepositoryChain{},
+			RepositoryChain:        map[string]*RepositoryChain{},
+		},
+	}
+
+	err := service.RegisterMessages(service.CreateRepository,
+		service.UpdateRepository)
+	/*service.TimeStampProof,
+	service.LatestBlocks,
+	service.TimestampProofs)*/
+
+	if err != nil {
+		log.ErrFatal(err, "Couldn't register messages")
+	}
+
+	return service
+}
+
+func (service *DebianUpdate) CreateRepository(si *network.ServerIdentity,
+	cr *CreateRepository) (network.Body, error) {
+
+	repo := cr.Release.Repository
+	log.Lvlf3("%s Creating repository %s version %s", service,
+		repo.GetName(), repo.Version)
+
+	repoChain := &RepositoryChain{
+		Release: cr.Release,
+		Root:    service.Storage.Root,
+	}
+
+	if service.Storage.Root == nil {
+		log.Lvl3("Creating Root-skipchain")
+		var err error
+		service.Storage.Root, err = service.skipchain.CreateRoster(cr.Roster,
+			cr.Base, cr.Height, skipchain.VerifyNone, nil)
+		if err != nil {
+			return nil, err
+		}
+		repoChain.Root = service.Storage.Root
+	}
+	log.Lvl3("Creating Data-skipchain")
+	var err error
+	repoChain.Root, repoChain.Data, err = service.skipchain.CreateData(repoChain.Root,
+		cr.Base, cr.Height, verifierID, cr.Release)
+	if err != nil {
+		return nil, err
+	}
+	service.Storage.RepositoryChainGenesis[repo.GetName()] = repoChain
+	if err := service.startPropagate(repo.GetName(), repoChain); err != nil {
+		return nil, err
+	}
+	service.timestamp(time.Now())
+
+	return &CreateRepositoryRet{repoChain}, nil
+}
+
+func (service *DebianUpdate) startPropagate(repo string,
+	repoChain *RepositoryChain) error {
+	roster := service.Storage.Root.Roster
+	log.Lvl2("Propagating repository", repo, "to", roster.List)
+	replies, err := manage.PropagateStartAndWait(service.Context, roster,
+		repoChain, 120000, service.PropagateSkipBlock)
+	if err != nil {
+		return err
+	}
+	if replies != len(roster.List) {
+		log.Warn("Did only get", replies, "out of", len(roster.List))
+	}
+	return nil
+}
+
+func (service *DebianUpdate) PropagateSkipBlock(msg network.Body) {
+	repoChain, ok := msg.(*RepositoryChain)
+	if !ok {
+		log.Error("Couldn't convert to SkipBlock")
+		return
+	}
+	repo := repoChain.Release.Repository.GetName()
+	log.Lvl2("saving repositorychain for", repo)
+	// TODO: Verification
+	if _, exists := service.Storage.RepositoryChainGenesis[repo]; !exists {
+		service.Storage.RepositoryChainGenesis[repo] = repoChain
+	}
+	service.Storage.RepositoryChain[repo] = repoChain
+}
+
+// timestamp creates a merkle tree of all the latests skipblocks of each
+// skipchains, run a timestamp protocol and store the results in
+// service.latestTimestamps.
+func (service *DebianUpdate) timestamp(time time.Time) {
+	measure := monitor.NewTimeMeasure("debianupdate_timestamp")
+	// order all packets and marshal them
+	ids := service.orderedLatestSkipblocksID()
+	// create merkle tree + proofs and the final message
+	root, proofs := crypto.ProofTree(HashFunc(), ids)
+	msg := MarshalPair(root, time.Unix())
+	// run protocol
+	signature := service.cosiSign(msg)
+	// TODO XXX Here in a non-academical world we should test if the
+	// signature contains enough participants.
+	service.updateTimestampInfo(root, proofs, time.Unix(), signature)
+	measure.Record()
+}
+
+func (service *DebianUpdate) cosiSign(msg []byte) []byte {
+	sdaTree := service.Storage.Root.Roster.GenerateBinaryTree()
+
+	// TODO XXX Here we use the swupdate protocol (should we ?)
+	tni := service.NewTreeNodeInstance(sdaTree, sdaTree.Root, swupdate.ProtocolName)
+	pi, err := swupdate.NewCoSiUpdate(tni, service.cosiVerify)
+	if err != nil {
+		panic("Couldn't make new protocol: " + err.Error())
+	}
+	service.RegisterProtocolInstance(pi)
+
+	pi.SigningMessage(msg)
+	// Take the raw message (already expecting a hash for the timestamp service)
+	response := make(chan []byte)
+	pi.RegisterSignatureHook(func(sig []byte) {
+		response <- sig
+	})
+	go pi.Dispatch()
+	go pi.Start()
+	log.Lvl2("Waiting on cosi response ...")
+	res := <-response
+	log.Lvl2("... DONE: Recieved cosi response")
+	return res
+}
+
+func (service *DebianUpdate) cosiVerify(msg []byte) bool {
+	signedRoot, signedTime := UnmarshalPair(msg)
+	// check timestamp
+	if time.Now().Sub(time.Unix(signedTime, 0)) > service.ReasonableTime {
+		log.Lvl2("Timestamp is too far in the past")
+		return false
+	}
+	// check merkle tree root
+	// order all packets and marshal them
+	ids := service.orderedLatestSkipblocksID()
+	// create merkle tree + proofs and the final message
+	root, _ := crypto.ProofTree(HashFunc(), ids)
+	// root of merkle tree is not secret, no need to use constant time.
+	if !bytes.Equal(root, signedRoot) {
+		log.Lvl2("Root of merkle root does not match")
+		return false
+	}
+
+	log.Lvl3("DebianUpdate cosi signature verified")
+	return true
+}
+
+func (service *DebianUpdate) updateTimestampInfo(rootID crypto.HashID, proofs []crypto.Proof, ts int64, sig []byte) {
+	service.Lock()
+	defer service.Unlock()
+	if service.Storage.Timestamp == nil {
+		service.Storage.Timestamp = &Timestamp{}
+	}
+	var t = service.Storage.Timestamp
+	t.Timestamp = ts
+	t.Root = rootID
+	t.Signature = sig
+	t.Proofs = proofs
+}
+
+// HashFunc used for the timestamp operations with the Merkle tree generation
+// and verification.
+func HashFunc() crypto.HashFunc {
+	return sha256.New
+}
+
+// MarshalPair takes the root of a merkle tree (only a slice of bytes) and a
+// unix timestamp and marshal them. UnmarshalPair do the opposite.
+func MarshalPair(root crypto.HashID, time int64) []byte {
+	var buff bytes.Buffer
+	if err := binary.Write(&buff, binary.BigEndian, time); err != nil {
+		panic(err)
+	}
+	return append(buff.Bytes(), []byte(root)...)
+}
+
+// UnmarshalPair takes a slice of bytes generated by MarshalPair and retrieve
+// the root and the unix timestamp out of it.
+func UnmarshalPair(buff []byte) (crypto.HashID, int64) {
+	var reader = bytes.NewBuffer(buff)
+	var time int64
+	if err := binary.Read(reader, binary.BigEndian, &time); err != nil {
+		panic(err)
+	}
+	return reader.Bytes(), time
+}
+
+// orderedLatestSkipblocksID sorts the latests blocks of all skipchains and
+// return all ids in an array of HashID
+func (service *DebianUpdate) orderedLatestSkipblocksID() []crypto.HashID {
+	keys := service.getOrderedPackageNames()
+
+	ids := make([]crypto.HashID, 0)
+	chains := service.Storage.RepositoryChain
+	for _, key := range keys {
+		ids = append(ids, crypto.HashID(chains[key].Data.Hash))
+	}
+	return ids
+}
+
+func (service *DebianUpdate) getOrderedPackageNames() []string {
+	keys := make([]string, 0)
+	for k := range service.Storage.RepositoryChain {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func (service *DebianUpdate) UpdateRepository(si *network.ServerIdentity,
+	ur *UpdateRepository) (network.Body, error) {
+	return nil, nil
+}
+
+// NewProtocol initialize the Protocol
+func (s *DebianUpdate) NewProtocol(tn *sda.TreeNodeInstance,
+	conf *sda.GenericConfig) (sda.ProtocolInstance, error) {
+	return nil, nil
+}
+
+func verifierFunc(msg, data []byte) bool {
+	_, sbBuf, err := network.UnmarshalRegistered(data)
+	sb, ok := sbBuf.(*skipchain.SkipBlock)
+	if err != nil || !ok {
+		log.Error(err, ok)
+		return false
+	}
+	_, relBuf, err := network.UnmarshalRegistered(sb.Data)
+	release, ok := relBuf.(*Release)
+	if err != nil || !ok {
+		log.Error(err, ok)
+		return false
+	}
+	repo := release.Repository
+	repoBin, err := network.MarshalRegisteredType(repo)
+	if err != nil {
+		log.Error(err)
+		return false
+	}
+	ver := monitor.NewTimeMeasure("verification")
+	for i, s := range release.Signatures {
+		err := NewPGPPublic(repo.Keys[i]).Verify(
+			repoBin, s)
+		if err != nil {
+			log.Lvl2("Wrong signature")
+			return false
+		}
+	}
+	ver.Record()
+	// maybe verify the packages individual skipchain / build
+	return true
+}
