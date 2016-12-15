@@ -62,3 +62,29 @@ type UpdateRepository struct {
 type UpdateRepositoryRet struct {
 	RepositoryChain *RepositoryChain
 }
+
+type RepositorySC struct {
+	repositoryName string
+}
+
+// If no skipchain for PackageName is found, both first and last are nil.
+// If the skipchain has been found, both the genesis-block and the latest
+// block will be returned.
+type RepositorySCRet struct {
+	First *skipchain.SkipBlock
+	Last  *skipchain.SkipBlock
+}
+
+// Request skipblocks needed to get to the latest version of the repository.
+// LastKnownSB is the latest skipblock known to the client.
+type LatestBlock struct {
+	LastKnownSB skipchain.SkipBlockID
+}
+
+// Returns the timestamp of the latest skipblock, together with an eventual
+// shortes-link of skipblocks needed to go from the LastKnownSB to the
+// current skipblock.
+type LatestBlockRet struct {
+	Timestamp *Timestamp
+	Update    []*skipchain.SkipBlock
+}

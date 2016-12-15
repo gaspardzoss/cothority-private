@@ -13,6 +13,7 @@ import (
 	"github.com/dedis/cothority/monitor"
 	"github.com/dedis/cothority/sda"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func init() {
@@ -44,6 +45,31 @@ func TestMain(m *testing.M) {
 		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 		os.Exit(1)
 	}
+}
+
+func TestDebianUpdate_RepositorySC(t *testing.T) {
+	local := sda.NewLocalTest()
+	defer local.CloseAll()
+
+	_, roster, s := local.MakeHELS(5, debianUpdateService)
+	service := s.(*DebianUpdate)
+
+	release := chain1.blocks[0].release
+	crr, err := service.CreateRepository(nil,
+		&CreateRepository{roster, release, 2, 10})
+	log.ErrFatal(err)
+	repoChain := crr.(*CreateRepositoryRet).RepositoryChain
+
+	reposcret, err := service.RepositorySC(nil, &RepositorySC{"unknown"})
+	require.NotNil(t, err)
+	reposcret, err = service.RepositorySC(nil,
+		&RepositorySC{release.Repository.GetName()})
+	log.ErrFatal(err)
+	sc2 := reposcret.(*RepositorySCRet).Last
+
+	require.Equal(t, repoChain.Data.Hash, sc2.Hash)
+	sc3 := service.Storage.RepositoryChain[release.Repository.GetName()]
+	require.Equal(t, repoChain.Data.Hash, sc3.Data.Hash)
 }
 
 func TestDebianUpdate_CreateRepository(t *testing.T) {

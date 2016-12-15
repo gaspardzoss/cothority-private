@@ -4,6 +4,11 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
+	"sort"
+	"sync"
+	"time"
+
 	"github.com/dedis/cothority/crypto"
 	"github.com/dedis/cothority/log"
 	"github.com/dedis/cothority/monitor"
@@ -13,9 +18,6 @@ import (
 	"github.com/dedis/cothority/sda"
 	"github.com/dedis/cothority/services/skipchain"
 	"github.com/satori/go.uuid"
-	"sort"
-	"sync"
-	"time"
 )
 
 // ServiceName is the name to refer to the CoSi service
@@ -322,7 +324,6 @@ func verifierFunc(msg, data []byte) bool {
 		return false
 	}
 	root := release.RootID
-	//proofs := release.Proofs
 	if len(root) == 0 {
 		log.Lvl2("No root hash, has the Merkle-tree correctly been built ?")
 		return false
@@ -336,7 +337,7 @@ func verifierFunc(msg, data []byte) bool {
 	}
 	possibleRoot, _ := crypto.ProofTree(HashFunc(), hashes)
 
-	if !bytes.Equal(possibleRoot, root) { //!ok {
+	if !bytes.Equal(possibleRoot, root) {
 		log.Lvl2("Wrong root hash")
 		return false
 	}
@@ -344,4 +345,41 @@ func verifierFunc(msg, data []byte) bool {
 	return true
 }
 
-//func (service *DebianUpdate)
+func (service *DebianUpdate) RepositorySC(si *network.ServerIdentity,
+	rsc *RepositorySC) (network.Body, error) {
+
+	repoChain, ok := service.Storage.RepositoryChain[rsc.repositoryName]
+
+	if !ok {
+		return nil, errors.New("Does not exist.")
+	}
+
+	latestBlockRet, err := service.LatestBlock(nil,
+		&LatestBlock{repoChain.Data.Hash})
+
+	if err != nil {
+		return nil, err
+	}
+
+	update := latestBlockRet.(*LatestBlockRet).Update
+	return &RepositorySCRet{
+		First: service.Storage.RepositoryChainGenesis[rsc.repositoryName].Data,
+		Last:  update[len(update)-1],
+	}, nil
+}
+
+func (service *DebianUpdate) LatestBlock(si *network.ServerIdentity,
+	lb *LatestBlock) (network.Body, error) {
+	gucRet, err := service.skipchain.GetUpdateChain(service.Storage.Root,
+		lb.LastKnownSB)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if service.Storage.Timestamp == nil {
+		return nil, errors.New("Timestamp-service missing!")
+	}
+
+	return &LatestBlockRet{service.Storage.Timestamp, gucRet.Update}, nil
+}
