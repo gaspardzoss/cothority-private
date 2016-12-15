@@ -11,12 +11,12 @@ import (
 
 func init() {
 	for _, msg := range []interface{}{
-		Release{},
 		RepositoryChain{},
 		CreateRepository{},
 		CreateRepositoryRet{},
 		UpdateRepository{},
 		UpdateRepositoryRet{},
+		Release{},
 		Repository{},
 	} {
 		network.RegisterPacketType(msg)
@@ -28,7 +28,8 @@ type ProjectID uuid.UUID
 // Release is a Debian Repository and the developers' signatures
 type Release struct {
 	Repository *Repository
-	Signatures []string
+	RootID     crypto.HashID
+	Proofs     []crypto.Proof
 }
 
 type RepositoryChain struct {

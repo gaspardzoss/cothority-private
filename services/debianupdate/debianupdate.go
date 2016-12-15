@@ -43,11 +43,15 @@ type DebianUpdate struct {
 }
 
 type storage struct {
-	Timestamp              *Timestamp
-	RepositoryChainGenesis map[string]*RepositoryChain // the first block of the *string* repo
-	RepositoryChain        map[string]*RepositoryChain // the latest block
-	Root                   *skipchain.SkipBlock        // the root skipchain
-	TSInterval             time.Duration               // the interval between Timestamps
+	Timestamp *Timestamp
+	// the first block of the *string* repo
+	RepositoryChainGenesis map[string]*RepositoryChain
+	// the latest block
+	RepositoryChain map[string]*RepositoryChain
+	// the root skipchain
+	Root *skipchain.SkipBlock
+	// the interval between Timestamps
+	TSInterval time.Duration
 }
 
 func NewDebianUpdate(context *sda.Context, path string) sda.Service {
@@ -59,6 +63,7 @@ func NewDebianUpdate(context *sda.Context, path string) sda.Service {
 			RepositoryChainGenesis: map[string]*RepositoryChain{},
 			RepositoryChain:        map[string]*RepositoryChain{},
 		},
+		ReasonableTime: time.Hour,
 	}
 
 	err := service.RegisterMessages(service.CreateRepository,
@@ -76,7 +81,6 @@ func NewDebianUpdate(context *sda.Context, path string) sda.Service {
 
 func (service *DebianUpdate) CreateRepository(si *network.ServerIdentity,
 	cr *CreateRepository) (network.Body, error) {
-
 	repo := cr.Release.Repository
 	log.Lvlf3("%s Creating repository %s version %s", service,
 		repo.GetName(), repo.Version)
@@ -98,9 +102,10 @@ func (service *DebianUpdate) CreateRepository(si *network.ServerIdentity,
 	}
 	log.Lvl3("Creating Data-skipchain")
 	var err error
-	repoChain.Root, repoChain.Data, err = service.skipchain.CreateData(repoChain.Root,
-		cr.Base, cr.Height, verifierID, cr.Release)
+	repoChain.Root, repoChain.Data, err = service.skipchain.CreateData(
+		repoChain.Root, cr.Base, cr.Height, verifierID, cr.Release)
 	if err != nil {
+		log.Lvl2("error while adding the data in the skipchain")
 		return nil, err
 	}
 	service.Storage.RepositoryChainGenesis[repo.GetName()] = repoChain
@@ -207,7 +212,8 @@ func (service *DebianUpdate) cosiVerify(msg []byte) bool {
 	return true
 }
 
-func (service *DebianUpdate) updateTimestampInfo(rootID crypto.HashID, proofs []crypto.Proof, ts int64, sig []byte) {
+func (service *DebianUpdate) updateTimestampInfo(rootID crypto.HashID,
+	proofs []crypto.Proof, ts int64, sig []byte) {
 	service.Lock()
 	defer service.Unlock()
 	if service.Storage.Timestamp == nil {
@@ -250,7 +256,7 @@ func UnmarshalPair(buff []byte) (crypto.HashID, int64) {
 // orderedLatestSkipblocksID sorts the latests blocks of all skipchains and
 // return all ids in an array of HashID
 func (service *DebianUpdate) orderedLatestSkipblocksID() []crypto.HashID {
-	keys := service.getOrderedPackageNames()
+	keys := service.getOrderedRepositoryNames()
 
 	ids := make([]crypto.HashID, 0)
 	chains := service.Storage.RepositoryChain
@@ -260,7 +266,7 @@ func (service *DebianUpdate) orderedLatestSkipblocksID() []crypto.HashID {
 	return ids
 }
 
-func (service *DebianUpdate) getOrderedPackageNames() []string {
+func (service *DebianUpdate) getOrderedRepositoryNames() []string {
 	keys := make([]string, 0)
 	for k := range service.Storage.RepositoryChain {
 		keys = append(keys, k)
@@ -275,9 +281,26 @@ func (service *DebianUpdate) UpdateRepository(si *network.ServerIdentity,
 }
 
 // NewProtocol initialize the Protocol
-func (s *DebianUpdate) NewProtocol(tn *sda.TreeNodeInstance,
+func (service *DebianUpdate) NewProtocol(tn *sda.TreeNodeInstance,
 	conf *sda.GenericConfig) (sda.ProtocolInstance, error) {
-	return nil, nil
+	var pi sda.ProtocolInstance
+	var err error
+	switch tn.ProtocolName() {
+	case "Propagate":
+		log.Lvl2("DebianUpdate Service received New Protocol PROPAGATE event")
+		pi, err = manage.NewPropagateProtocol(tn)
+		if err != nil {
+			return nil, err
+		}
+		pi.(*manage.Propagate).RegisterOnData(service.PropagateSkipBlock)
+	default:
+		log.Lvl2("DebianUpdate Service received New Protocol COSI event")
+		pi, err = swupdate.NewCoSiUpdate(tn, service.cosiVerify)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return pi, err
 }
 
 func verifierFunc(msg, data []byte) bool {
@@ -294,21 +317,31 @@ func verifierFunc(msg, data []byte) bool {
 		return false
 	}
 	repo := release.Repository
-	repoBin, err := network.MarshalRegisteredType(repo)
-	if err != nil {
-		log.Error(err)
+	if repo == nil {
+		log.Lvl2("The repository contained in the release is nil")
+		return false
+	}
+	root := release.RootID
+	//proofs := release.Proofs
+	if len(root) == 0 {
+		log.Lvl2("No root hash, has the Merkle-tree correctly been built ?")
 		return false
 	}
 	ver := monitor.NewTimeMeasure("verification")
-	for i, s := range release.Signatures {
-		err := NewPGPPublic(repo.Keys[i]).Verify(
-			repoBin, s)
-		if err != nil {
-			log.Lvl2("Wrong signature")
-			return false
-		}
+
+	// build the merkle-tree for packages
+	hashes := make([]crypto.HashID, len(repo.Packages))
+	for i, p := range repo.Packages {
+		hashes[i] = crypto.HashID(p.Hash)
+	}
+	possibleRoot, _ := crypto.ProofTree(HashFunc(), hashes)
+
+	if !bytes.Equal(possibleRoot, root) { //!ok {
+		log.Lvl2("Wrong root hash")
+		return false
 	}
 	ver.Record()
-	// maybe verify the packages individual skipchain / build
 	return true
 }
+
+//func (service *DebianUpdate)

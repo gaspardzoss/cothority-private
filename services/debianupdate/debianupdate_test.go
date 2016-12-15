@@ -8,15 +8,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dedis/cothority/crypto"
 	"github.com/dedis/cothority/log"
 	"github.com/dedis/cothority/monitor"
-	"github.com/dedis/cothority/network"
 	"github.com/dedis/cothority/sda"
 	"github.com/stretchr/testify/assert"
 )
 
 func init() {
-	initGlobals(3)
+	initGlobals()
 }
 
 func TestMain(m *testing.M) {
@@ -52,17 +52,17 @@ func TestDebianUpdate_CreateRepository(t *testing.T) {
 	_, roster, s := local.MakeHELS(5, debianUpdateService)
 	service := s.(*DebianUpdate)
 	release1 := chain1.blocks[0].release
+	rootHash := chain2.blocks[1].release.RootID
 	repo1 := chain1.blocks[0].repo
-	sigs2 := chain2.blocks[1].sigs
 	// This should fail as the signatures are wrong
 	createRepo, err := service.CreateRepository(nil,
 		&CreateRepository{
 			Roster:  roster,
-			Release: &Release{repo1, sigs2},
+			Release: &Release{repo1, rootHash, release1.Proofs},
 			Base:    2,
 			Height:  10,
 		})
-	assert.NotNil(t, err, "Accepted wrong signatures")
+	assert.NotNil(t, err, "Accepted wrong root")
 	createRepo, err = service.CreateRepository(nil,
 		&CreateRepository{roster, release1, 2, 10})
 	log.ErrFatal(err)
@@ -73,6 +73,25 @@ func TestDebianUpdate_CreateRepository(t *testing.T) {
 	assert.Equal(t, *repo1, *repo)
 	assert.Equal(t, *repo1,
 		*service.Storage.RepositoryChain[repo.GetName()].Release.Repository)
+	assert.Equal(t, release1.RootID,
+		service.Storage.RepositoryChain[repo.GetName()].Release.RootID)
+}
+
+func TestDebianUpdate_PropagateBlock(t *testing.T) {
+	local := sda.NewLocalTest()
+	defer local.CloseAll()
+	_, roster, s := local.MakeHELS(5, debianUpdateService)
+	service := s.(*DebianUpdate)
+
+	createRepo, err := service.CreateRepository(nil,
+		&CreateRepository{roster, chain1.blocks[0].release, 2, 10})
+
+	assert.Nil(t, err)
+	log.ErrFatal(err)
+
+	repoChain := createRepo.(*CreateRepositoryRet).RepositoryChain
+
+	assert.Equal(t, repoChain.Release, chain1.blocks[0].release)
 }
 
 // repositoryChain tracks all test releases for one fake repo
@@ -83,67 +102,55 @@ type repositoryChain struct {
 
 // packageBlock tracks all information on one release of a package
 type repositoryBlock struct {
-	keys       []*PGP
-	keysPublic []string
-	repo       *Repository
-	release    *Release
-	sigs       []string
+	repo    *Repository
+	release *Release
 }
 
 var chain1 *repositoryChain
 var chain2 *repositoryChain
 
-var keys []*PGP
-var keysPublic []string
+func initGlobals() {
+	createBlock := func(origin, suite, version string, packages []*Package) *repositoryBlock {
+		repo := &Repository{
+			Origin:   origin,
+			Suite:    suite,
+			Version:  version,
+			Packages: packages,
+			SourceUrl: "http://mirror.switch.ch/ftp/mirror/debian/dists/stable" +
+				"/main/binary-amd64/",
+		}
 
-func initGlobals(nbrKeys int) {
-	for i := 0; i < nbrKeys; i++ {
-		keys = append(keys, NewPGP())
-		keysPublic = append(keysPublic, keys[i].ArmorPublic())
-	}
-
-	createBlock := func(origin, suite, version string) *repositoryBlock {
-		packages := []*Package{
-			{"test1", "0.1", "0000", false},
-			{"test2", "0.1", "0101", false},
-			{"test3", "0.1", "1010", false},
-			{"test4", "0.1", "1111", false},
+		hashes := make([]crypto.HashID, len(repo.Packages))
+		for i, p := range repo.Packages {
+			hashes[i] = crypto.HashID(p.Hash)
 		}
-		repo1 := &Repository{
-			Origin:    origin,
-			Suite:     suite,
-			Version:   version,
-			Keys:      keysPublic,
-			Threshold: 3,
-			Packages:  packages,
-			SourceUrl: "http://mirror.switch.ch/ftp/mirror/debian/dists/stable/main/binary-amd64/",
-		}
-		p1, err := network.MarshalRegisteredType(repo1)
-		log.ErrFatal(err)
-		var sigs1 []string
-		for _, k := range keys {
-			s1, err := k.Sign(p1)
-			log.ErrFatal(err)
-			sigs1 = append(sigs1, s1)
-		}
+		root, proofs := crypto.ProofTree(HashFunc(), hashes)
 		return &repositoryBlock{
-			keys:       keys,
-			keysPublic: keysPublic,
-			repo:       repo1,
-			release:    &Release{repo1, sigs1},
-			sigs:       sigs1,
+			repo:    repo,
+			release: &Release{repo, root, proofs},
 		}
 	}
 
-	createChain := func(origin string, suite string) *repositoryChain {
-		b1 := createBlock(origin, suite, "1.2")
-		b2 := createBlock(origin, suite, "1.3")
+	createChain := func(origin string, suite string, packages []*Package) *repositoryChain {
+		b1 := createBlock(origin, suite, "1.2", packages)
+		b2 := createBlock(origin, suite, "1.3", packages)
 		return &repositoryChain{
 			repo:   origin + "-" + suite,
 			blocks: []*repositoryBlock{b1, b2},
 		}
 	}
-
-	chain1 = createChain("debian", "stable")
-	chain2 = createChain("debian", "stable-update")
+	packages1 := []*Package{
+		{"test1", "0.1", "0000"},
+		{"test2", "0.1", "0101"},
+		{"test3", "0.1", "1010"},
+		{"test4", "0.1", "1111"},
+	}
+	packages2 := []*Package{
+		{"test1", "0.1", "000a"},
+		{"test2", "0.1", "0101"},
+		{"test3", "0.1", "1010"},
+		{"test4", "0.1", "1111"},
+	}
+	chain1 = createChain("debian", "stable", packages1)
+	chain2 = createChain("debian", "stable-update", packages2)
 }

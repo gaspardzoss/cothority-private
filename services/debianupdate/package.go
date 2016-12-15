@@ -10,10 +10,9 @@ import (
  */
 
 type Package struct {
-	Name          string
-	Version       string
-	Hash          string
-	Reproductible bool
+	Name    string
+	Version string
+	Hash    string
 }
 
 // NewPackage takes an input string of the form
@@ -28,7 +27,7 @@ func NewPackage(packageString string) (*Package, error) {
 		return nil, errors.New("Should have at least 3 lines " + packageString)
 	}
 
-	p := &Package{Reproductible: false}
+	p := &Package{}
 
 	for _, line := range lines {
 		if strings.Contains(line, "Package:") {

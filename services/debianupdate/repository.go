@@ -16,8 +16,6 @@ type Repository struct {
 	Origin    string
 	Suite     string
 	Version   string
-	Keys      []string // the developers signing keys
-	Threshold int      // the # of required dev
 	Packages  []*Package
 	SourceUrl string
 	sync.Mutex
