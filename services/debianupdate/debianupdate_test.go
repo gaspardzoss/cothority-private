@@ -103,6 +103,33 @@ func TestDebianUpdate_CreateRepository(t *testing.T) {
 		service.Storage.RepositoryChain[repo.GetName()].Release.RootID)
 }
 
+func TestDebianUpdate_UpdateRepository(t *testing.T) {
+	local := sda.NewLocalTest()
+	defer local.CloseAll()
+
+	_, roster, s := local.MakeHELS(5, debianUpdateService)
+	service := s.(*DebianUpdate)
+
+	release1 := chain1.blocks[0].release
+	release2 := chain1.blocks[1].release
+
+	repo, err := service.CreateRepository(nil,
+		&CreateRepository{roster, release1, 2, 10})
+	log.ErrFatal(err)
+
+	repoChain := repo.(*CreateRepositoryRet).RepositoryChain
+
+	updateRepo, err := service.UpdateRepository(nil,
+		&UpdateRepository{
+			RepositoryChain: repoChain,
+			Release:         release2,
+		})
+	log.ErrFatal(err)
+	repoChain = updateRepo.(*UpdateRepositoryRet).RepositoryChain
+	assert.NotNil(t, repoChain)
+	assert.Equal(t, *chain1.blocks[1].repo, *repoChain.Release.Repository)
+}
+
 func TestDebianUpdate_PropagateBlock(t *testing.T) {
 	local := sda.NewLocalTest()
 	defer local.CloseAll()

@@ -279,7 +279,30 @@ func (service *DebianUpdate) getOrderedRepositoryNames() []string {
 
 func (service *DebianUpdate) UpdateRepository(si *network.ServerIdentity,
 	ur *UpdateRepository) (network.Body, error) {
-	return nil, nil
+	addBlock := monitor.NewTimeMeasure("add_block")
+	defer addBlock.Record()
+
+	repoChain := &RepositoryChain{
+		Release: ur.Release,
+		Root:    ur.RepositoryChain.Root,
+	}
+	release := ur.Release
+	log.Lvl3("Creating Data-skipchain")
+	var err error
+	ret, err := service.skipchain.ProposeData(ur.RepositoryChain.Root,
+		ur.RepositoryChain.Data, release)
+	if err != nil {
+		return nil, err
+	}
+	repoChain.Data = ret.Latest
+
+	if err := service.startPropagate(release.Repository.GetName(),
+		repoChain); err != nil {
+		return nil, err
+	}
+
+	service.timestamp(time.Now())
+	return &UpdateRepositoryRet{repoChain}, nil
 }
 
 // NewProtocol initialize the Protocol
