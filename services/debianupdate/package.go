@@ -15,6 +15,23 @@ type Package struct {
 	Hash    string
 }
 
+type PackageSlice []*Package
+
+// Len is part of sort.Interface.
+func (d PackageSlice) Len() int {
+	return len(d)
+}
+
+// Swap is part of sort.Interface.
+func (d PackageSlice) Swap(i, j int) {
+	d[i], d[j] = d[j], d[i]
+}
+
+// Less is part of sort.Interface. We use count as the value to sort by
+func (d PackageSlice) Less(i, j int) bool {
+	return d[i].Name < d[j].Name
+}
+
 // NewPackage takes an input string of the form
 // Package: name
 // Version: 1.0+blabla
@@ -43,6 +60,10 @@ func NewPackage(packageString string) (*Package, error) {
 		if p.Name != "" && p.Version != "" && p.Hash != "" {
 			return p, nil
 		}
+	}
+
+	if p.Name == "" || p.Version == "" || p.Hash == "" {
+		return nil, errors.New("Invalid package \n" + packageString)
 	}
 
 	return p, nil

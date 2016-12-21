@@ -1,6 +1,7 @@
 Origin: Debian
 Label: Debian
 Suite: stable
+Archive: stable
 Version: 8.6
 Codename: jessie
 Date: Sat, 17 Sep 2016 11:38:03 UTC

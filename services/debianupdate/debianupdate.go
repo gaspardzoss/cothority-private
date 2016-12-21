@@ -91,7 +91,6 @@ func (service *DebianUpdate) CreateRepository(si *network.ServerIdentity,
 		Release: cr.Release,
 		Root:    service.Storage.Root,
 	}
-
 	if service.Storage.Root == nil {
 		log.Lvl3("Creating Root-skipchain")
 		var err error

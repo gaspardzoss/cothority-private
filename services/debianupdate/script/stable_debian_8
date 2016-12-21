@@ -1,0 +1,17 @@
+wget http://snapshot.debian.org/archive/debian/20161220T152514Z/dists/jessie/main/binary-amd64/Packages.gz -O Packages_20161220T152514Z.gz
+
+wget http://snapshot.debian.org/archive/debian/20160917T042239Z/dists/jessie/main/binary-amd64/Packages.gz -O Packages_20160917T042239Z.gz
+
+wget http://snapshot.debian.org/archive/debian/20160604T041011Z/dists/jessie/main/binary-amd64/Packages.gz -O Packages_20160604T041011Z.gz
+
+wget http://snapshot.debian.org/archive/debian/20160402T041108Z/dists/jessie/main/binary-amd64/Packages.gz -O Packages_20160402T041108Z.gz
+
+wget http://snapshot.debian.org/archive/debian/20160123T100707Z/dists/jessie/main/binary-amd64/Packages.gz -O Packages_20160123T100707Z.gz
+
+wget http://snapshot.debian.org/archive/debian/20160123T100707Z/dists/jessie/main/binary-amd64/Packages.gz -O Packages_20160123T100707Z.gz
+
+wget http://snapshot.debian.org/archive/debian/20150905T033133Z/dists/jessie/main/binary-amd64/Packages.gz -O Packages_20150905T033133Z.gz
+
+wget http://snapshot.debian.org/archive/debian/20150606T100444Z/dists/jessie/main/binary-amd64/Packages.gz -O Packages_20150606T100444Z.gz
+
+wget http://snapshot.debian.org/archive/debian/20150425T101902Z/dists/jessie/main/binary-amd64/Packages.gz -O Packages_20150425T101902Z.gz
