@@ -82,6 +82,7 @@ func (e *oneClientSimulation) Run(config *sda.SimulationConfig) error {
 		for i, p := range repo.Packages {
 			hashes[i] = crypto.HashID(p.Hash)
 		}
+
 		root, proofs := crypto.ProofTree(HashFunc(), hashes)
 		release := &Release{repo, root, proofs}
 		sc, knownRepo := repos[repo.GetName()]
@@ -100,15 +101,19 @@ func (e *oneClientSimulation) Run(config *sda.SimulationConfig) error {
 			repos[repo.GetName()] = cr.(*CreateRepositoryRet).RepositoryChain
 			releases[repo.GetName()] = release
 		}
-		log.Print(repo.GetName())
-		log.Print(release.RootID)
 	}
 	log.Lvl1("Loading repos - done")
 
+	// Get the latest repo Skipchain element
 	repoSCret, err := service.RepositorySC(nil, &RepositorySC{"Debian-stable"})
 	log.ErrFatal(err)
 	sc := repoSCret.(*RepositorySCRet).Last
-	log.Print(sc.Hash)
+	log.Lvl2("latest block hash : ", sc.Hash)
+
+	// From now on all the packages are in the Skipchain and ready to receive
+	// requests by the clients.
+
+	// We can verify the hash of the 2 packages (vim and golang)
 
 	//releases := make(map[string]*Release)
 	//updateClient := ...

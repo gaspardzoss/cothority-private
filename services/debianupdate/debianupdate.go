@@ -69,7 +69,7 @@ func NewDebianUpdate(context *sda.Context, path string) sda.Service {
 	}
 
 	err := service.RegisterMessages(service.CreateRepository,
-		service.UpdateRepository)
+		service.UpdateRepository, service.LatestBlocks)
 	/*service.TimeStampProof,
 	service.LatestBlocks,
 	service.TimestampProofs)*/
@@ -404,4 +404,26 @@ func (service *DebianUpdate) LatestBlock(si *network.ServerIdentity,
 	}
 
 	return &LatestBlockRet{service.Storage.Timestamp, gucRet.Update}, nil
+}
+
+func (service *DebianUpdate) LatestBlocks(si *network.ServerIdentity,
+	lbs *LatestBlocks) (network.Body, error) {
+	var updates []*skipchain.SkipBlock
+	var lengths []int64
+	var t *Timestamp
+	for _, id := range lbs.LastKnownSBs {
+		b, err := service.LatestBlock(nil, &LatestBlock{id})
+		if err != nil {
+			return nil, err
+		}
+		lb := b.(*LatestBlockRet)
+		if len(lb.Update) > 1 {
+			updates = append(updates, lb.Update...)
+			lengths = append(lengths, int64(len(lb.Update)))
+			if t == nil {
+				t = lb.Timestamp
+			}
+		}
+	}
+	return &LatestBlocksRetInternal{t, updates, lengths}, nil
 }

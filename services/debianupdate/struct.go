@@ -18,6 +18,10 @@ func init() {
 		UpdateRepositoryRet{},
 		Release{},
 		Repository{},
+		LatestBlocks{},
+		LatestBlocksRet{},
+		LatestBlocksRetInternal{},
+		TimestampRets{},
 	} {
 		network.RegisterPacketType(msg)
 	}
@@ -81,10 +85,56 @@ type LatestBlock struct {
 	LastKnownSB skipchain.SkipBlockID
 }
 
+// Similar to LatestBlock but asking update information for all blocks being
+// managed by the service.
+type LatestBlocks struct {
+	LastKnownSBs []skipchain.SkipBlockID
+}
+
 // Returns the timestamp of the latest skipblock, together with an eventual
 // shortes-link of skipblocks needed to go from the LastKnownSB to the
 // current skipblock.
 type LatestBlockRet struct {
 	Timestamp *Timestamp
 	Update    []*skipchain.SkipBlock
+}
+
+// Internal structure with lengths
+type LatestBlocksRetInternal struct {
+	Timestamp *Timestamp
+	// Each updates for each repository ordered in same order that in LatestBlocks
+	Updates []*skipchain.SkipBlock
+	// STUPID: [][] is not correctly parsed by protobuf, so use lengths...
+	Lengths []int64
+}
+
+// Similar to LatestBlockRet but gives information on *all* repository
+type LatestBlocksRet struct {
+	Timestamp *Timestamp
+	// Each updates for each packages ordered in same order that in LatestBlocks
+	Updates [][]*skipchain.SkipBlock
+}
+
+// TimestampRequest asks the debianupdate service to give back the proof of
+// inclusion for the latest timestamp merkle tree including the repository
+// denoted by Name.
+type TimestampRequest struct {
+	Name string
+}
+
+// Similar to TimestampRequest but asking more multiple proof at the same time
+type TimestampRequests struct {
+	Names []string
+}
+
+// Returns the Proofs to use to verify the inclusion of the repository given in
+// TimestampRequest
+type TimestampRet struct {
+	Proof crypto.Proof
+}
+
+// Similar to TimestampRet but returns the requested proofs designated by
+// repositories names.
+type TimestampRets struct {
+	Proofs map[string]crypto.Proof
 }

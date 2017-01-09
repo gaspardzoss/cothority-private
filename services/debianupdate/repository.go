@@ -79,9 +79,9 @@ func NewRepository(releaseFile string, packagesFile string, sourceUrl string) (*
 
 	sort.Sort(repository.Packages)
 
-	for _, p := range repository.Packages {
+	/*for _, p := range repository.Packages {
 		log.Print(p)
-	}
+	}*/
 
 	return repository, nil
 }

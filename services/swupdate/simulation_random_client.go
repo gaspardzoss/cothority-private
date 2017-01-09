@@ -121,7 +121,8 @@ func (e *randClientSimulation) Run(config *sda.SimulationConfig) error {
 			if err != nil {
 				return err
 			}
-			packets[pol.Name] = cp.(*CreatePackageRet).SwupChain
+			packets[pol.Name] =
+				cp.(*CreatePackageRet).SwupChain
 			// suppose the client has the first packet
 			latest[pol.Name] = packets[pol.Name].Data.Hash
 			releases[pol.Name] = dr
