@@ -286,8 +286,17 @@ func (service *DebianUpdate) UpdateRepository(si *network.ServerIdentity,
 		Root:    ur.RepositoryChain.Root,
 	}
 	release := ur.Release
-	log.Lvl3("Creating Data-skipchain")
+
 	var err error
+	actualRoot := service.Storage.RepositoryChain[release.Repository.GetName()].
+		Release.RootID
+	// Check if the new block is different
+	if bytes.Equal(actualRoot, release.RootID) {
+		return nil, errors.New("The latest existing skipblock is the same," +
+			" only update the timestamp.")
+	}
+
+	log.Lvl3("Creating Data-skipchain")
 	ret, err := service.skipchain.ProposeData(ur.RepositoryChain.Root,
 		ur.RepositoryChain.Data, release)
 	if err != nil {

@@ -4,10 +4,11 @@ require 'mechanize'
 ## URLs will be taken such as
 # SNAPSHOT_URL / <timestamp> / PATH / {BINARY_PATH,SOURCE_PATH}
 SNAPSHOT_URL = "http://snapshot.debian.org/archive/debian/"
-PATH = "dists/testing/main/"
-#PATH = "dists/jessie/updates/main/"
+#PATH = "dists/testing/main/"
+PATH = "dists/stable-updates/main/"
 BINARY_PATH = "binary-amd64/Packages.gz"
 SOURCE_PATH = "source/Sources.gz"
+RELEASE_PATH = "binary-amd64/Release"
 
 class Scrapper
 
@@ -29,6 +30,7 @@ class Scrapper
         flinks.inject(Hash.new{ |h,k| h[k] = {}}) do |h,link|
             h[link.text][:binary] = URI.join(@agent.page.uri.merge(link.uri),PATH,BINARY_PATH)
             h[link.text][:source] = URI.join(@agent.page.uri.merge(link.uri),PATH,SOURCE_PATH)
+            h[link.text][:release] = URI.join(@agent.page.uri.merge(link.uri),PATH,RELEASE_PATH)
             h
         end
     end

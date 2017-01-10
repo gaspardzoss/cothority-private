@@ -63,7 +63,7 @@ func NewRepository(releaseFile string, packagesFile string, sourceUrl string) (*
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		if line != "" && line != "" && line != "\n" {
+		if line != " " && line != "" && line != "\n" {
 			packageString += line + "\n"
 		} else {
 			// TODO go repository.AddPackage(packageString) with chan instead of mutex
