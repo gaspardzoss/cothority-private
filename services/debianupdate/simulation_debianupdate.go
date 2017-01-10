@@ -7,7 +7,8 @@ import (
 	"github.com/dedis/cothority/monitor"
 	"github.com/dedis/cothority/sda"
 	"github.com/dedis/cothority/services/timestamp"
-	"strings"
+	"os"
+	"sort"
 	"time"
 )
 
@@ -75,8 +76,21 @@ func (e *createSimulation) Run(config *sda.SimulationConfig) error {
 	}
 
 	// get the release and snapshots
-	snapshot_files := strings.Split(e.Snapshots, " ")
-	release_files := strings.Split(e.Releases, " ")
+	current_dir, err := os.Getwd()
+	if err != nil {
+		return nil
+	}
+	snapshot_files, err := GetFileFromType(current_dir, "_Packages")
+	if err != nil {
+		return nil
+	}
+	release_files, err := GetFileFromType(current_dir, "_Release")
+	if err != nil {
+		return nil
+	}
+
+	sort.Sort(snapshot_files)
+	sort.Sort(release_files)
 
 	// Map a repo name to a skipchain
 	repos := make(map[string]*RepositoryChain)
