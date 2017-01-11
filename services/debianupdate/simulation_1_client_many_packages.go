@@ -3,6 +3,7 @@ package debianupdate
 import (
 	"github.com/BurntSushi/toml"
 
+	"errors"
 	"github.com/dedis/cothority/crypto"
 	"github.com/dedis/cothority/log"
 	"github.com/dedis/cothority/monitor"
@@ -10,8 +11,6 @@ import (
 	"github.com/dedis/cothority/services/timestamp"
 	"os"
 	"sort"
-	"strings"
-	//"bytes"
 	"time"
 )
 
@@ -21,11 +20,10 @@ func init() {
 
 type oneClientSimulation struct {
 	sda.SimulationBFTree
-	Packages           string // The packages installed
-	PackagesLatestHash string // The latest hashes for the inst. packages
-	Base               int
-	Height             int
-	Snapshots          string // All the snapshots filenames
+	Base                      int
+	Height                    int
+	NumberOfInstalledPackages int
+	Snapshots                 string // All the snapshots filenames
 }
 
 func NewOneClientSimulation(config string) (sda.Simulation, error) {
@@ -49,6 +47,7 @@ func (e *oneClientSimulation) Setup(dir string, hosts []string) (
 		return nil, err
 	}
 	err = CopyDir(dir, e.Snapshots)
+
 	if err != nil {
 		return nil, err
 	}
@@ -75,11 +74,9 @@ func (e *oneClientSimulation) Run(config *sda.SimulationConfig) error {
 		return nil
 	}
 
-	installed_packages := strings.Split(e.Packages, " ")
-	installed_packages_hashes := strings.Split(e.PackagesLatestHash, " ")
-
 	// get the release and snapshots
 	current_dir, err := os.Getwd()
+
 	if err != nil {
 		return nil
 	}
@@ -99,7 +96,7 @@ func (e *oneClientSimulation) Run(config *sda.SimulationConfig) error {
 	releases := make(map[string]*Release)
 
 	updateClient := NewClient(config.Roster)
-	//timeClient := timestamp.NewClient()
+
 	var round *monitor.TimeMeasure
 
 	log.Lvl2("Loading repository files")
@@ -180,22 +177,25 @@ func (e *oneClientSimulation) Run(config *sda.SimulationConfig) error {
 
 	// Verify proofs for installed packages
 	round = monitor.NewTimeMeasure("verify_proofs")
-	/*for _, installed_package := range installed_packages {
-		p := lr.Packages[installed_package]
-		hash := []byte(p.Hash)
-		proof := p.Proof
-		log.Lvl1(proof.Check(HashFunc(), lr.RootID, hash))
-	}*/
 
-	for _, p := range lr.Packages {
+	// take e.NumberOfInstalledPackages randomly insteand of the first
+
+	log.Lvl1("Verifiying at most", e.NumberOfInstalledPackages, "packages")
+	i := 1
+	for name, p := range lr.Packages {
 		hash := []byte(p.Hash)
 		proof := p.Proof
-		log.Lvl1(proof.Check(HashFunc(), lr.RootID, hash))
+		if proof.Check(HashFunc(), lr.RootID, hash) {
+			log.Lvl1("Package", name, "correctly verified")
+		} else {
+			log.ErrFatal(errors.New("The proof for " + name + " is not correct."))
+		}
+		i = i + 1
+		if i > e.NumberOfInstalledPackages {
+			break
+		}
 	}
 	round.Record()
-
-	log.Lvl2(installed_packages_hashes[0])
-	log.Lvl2(installed_packages[0])
 
 	/*
 		release, err := updateClient.LatestRelease("Debian-jessie-updates")

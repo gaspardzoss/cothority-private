@@ -87,7 +87,7 @@ func (c *Client) LatestRelease(repo string) (*LatestRelease, error) {
 		return nil, err
 	}
 
-	// from the release we etract the packages names + hashes + proofs
+	// from the release we extract the packages names + hashes + proofs
 	release := r.(*Release)
 
 	proofs := release.Proofs

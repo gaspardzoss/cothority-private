@@ -8,6 +8,11 @@ Base = 4
 RunWait = 3600
 Hosts = 4
 Delay = 50
+Snapshots = "stable-update"
 
-Packages, PackagesLatestHash, Snapshots, Releases
-"clamav tzdata", "c322ccd4f4d09e57adfdff2f4e582c4aa6618f89d0d33207d4dc8e46e6b903d2 64f42bcd3b116ce57329140eec90bbfbdcc1f135a85b4efe476790fd925ddc2c", "stable-update"
+NumberOfInstalledPackages
+1
+10
+100
+1000
+10000

@@ -56,12 +56,12 @@ func CopyDir(dir, snapshots string) error {
 	}
 	log.Lvl2("We're in", wd)
 
-	releases, err := GetFileFromType("../services/debianupdate/script/"+snapshots,
+	releases, err := GetFileFromType(dir+"/../../../services/debianupdate/script/"+snapshots,
 		"Release")
 	if err != nil {
 		return err
 	}
-	packages, err := GetFileFromType("../services/debianupdate/script/"+snapshots,
+	packages, err := GetFileFromType(dir+"/../../../services/debianupdate/script/"+snapshots,
 		"Packages")
 	if err != nil {
 		return err
@@ -73,10 +73,10 @@ func CopyDir(dir, snapshots string) error {
 		return err
 	}
 	for _, file := range append(releases, packages...) {
-		dst := path.Join(dir+"/"+snapshots+"/", path.Base(file))
+		dst := path.Join(dir, snapshots, path.Base(file))
 		if _, err := os.Stat(dst); err != nil {
 			err := config.Copy(dst,
-				"../services/debianupdate/script/"+snapshots+"/"+file)
+				dir+"/../../../services/debianupdate/script/"+snapshots+"/"+file)
 			if err != nil {
 				return err
 			}
