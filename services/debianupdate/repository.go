@@ -27,9 +27,10 @@ type Repository struct {
 
 // NewRepository create a new repository from a release file, a packages file
 // a keys file and a source url
-func NewRepository(releaseFile string, packagesFile string, sourceUrl string) (*Repository, error) {
+func NewRepository(releaseFile string, packagesFile string,
+	sourceUrl string, dir string) (*Repository, error) {
 
-	release, err := ioutil.ReadFile(releaseFile)
+	release, err := ioutil.ReadFile(dir + "/" + releaseFile)
 	log.ErrFatal(err)
 
 	repository := &Repository{SourceUrl: sourceUrl}
@@ -44,7 +45,7 @@ func NewRepository(releaseFile string, packagesFile string, sourceUrl string) (*
 			repository.Version = strings.Replace(line, "Version: ", "", 1)
 		}
 	}
-	file_p, err := os.Open(packagesFile)
+	file_p, err := os.Open(dir + "/" + packagesFile)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -8,7 +8,10 @@ import (
 	"github.com/dedis/cothority/monitor"
 	"github.com/dedis/cothority/sda"
 	"github.com/dedis/cothority/services/timestamp"
+	"os"
+	"sort"
 	"strings"
+	//"bytes"
 	"time"
 )
 
@@ -23,7 +26,6 @@ type oneClientSimulation struct {
 	Base               int
 	Height             int
 	Snapshots          string // All the snapshots filenames
-	Releases           string // All the release filenames
 }
 
 func NewOneClientSimulation(config string) (sda.Simulation, error) {
@@ -32,6 +34,7 @@ func NewOneClientSimulation(config string) (sda.Simulation, error) {
 	if err != nil {
 		return nil, err
 	}
+	//log.SetDebugVisible(3)
 	return es, nil
 }
 
@@ -45,7 +48,7 @@ func (e *oneClientSimulation) Setup(dir string, hosts []string) (
 	if err != nil {
 		return nil, err
 	}
-	err = CopyFiles(dir, e.Snapshots, e.Releases)
+	err = CopyDir(dir, e.Snapshots)
 	if err != nil {
 		return nil, err
 	}
@@ -72,14 +75,32 @@ func (e *oneClientSimulation) Run(config *sda.SimulationConfig) error {
 		return nil
 	}
 
-	packages := strings.Split(e.Packages, " ")
-	packages_hashes := strings.Split(e.PackagesLatestHash, " ")
+	installed_packages := strings.Split(e.Packages, " ")
+	installed_packages_hashes := strings.Split(e.PackagesLatestHash, " ")
 
-	snapshot_files := strings.Split(e.Snapshots, " ")
-	release_files := strings.Split(e.Releases, " ")
+	// get the release and snapshots
+	current_dir, err := os.Getwd()
+	if err != nil {
+		return nil
+	}
+	snapshot_files, err := GetFileFromType(current_dir+"/"+e.Snapshots, "Packages")
+	if err != nil {
+		return nil
+	}
+	release_files, err := GetFileFromType(current_dir+"/"+e.Snapshots, "Release")
+	if err != nil {
+		return nil
+	}
+
+	sort.Sort(snapshot_files)
+	sort.Sort(release_files)
 
 	repos := make(map[string]*RepositoryChain)
 	releases := make(map[string]*Release)
+
+	updateClient := NewClient(config.Roster)
+	//timeClient := timestamp.NewClient()
+	var round *monitor.TimeMeasure
 
 	log.Lvl2("Loading repository files")
 	for i, release_file := range release_files {
@@ -87,7 +108,7 @@ func (e *oneClientSimulation) Run(config *sda.SimulationConfig) error {
 
 		// Create a new repository structure (not a new skipchain..!)
 		repo, err := NewRepository(release_file, snapshot_files[i],
-			"https://snapshots.debian.org")
+			"https://snapshots.debian.org", e.Snapshots)
 		log.ErrFatal(err)
 		log.Lvl1("Repository created with", len(repo.Packages), "packages")
 
@@ -99,14 +120,16 @@ func (e *oneClientSimulation) Run(config *sda.SimulationConfig) error {
 
 		// Compute the root and the proofs
 		root, proofs := crypto.ProofTree(HashFunc(), hashes)
-
+		lengths := []int64{}
+		for _, proof := range proofs {
+			lengths = append(lengths, int64(len(proof)))
+		}
 		// Store the repo, root and proofs in a release
-		release := &Release{repo, root, proofs}
+		release := &Release{repo, root, proofs, lengths}
 
 		// check if the skipchain has already been created for this repo
 		sc, knownRepo := repos[repo.GetName()]
 
-		var round *monitor.TimeMeasure
 		if knownRepo {
 			round = monitor.NewTimeMeasure("add_to_skipchain")
 
@@ -147,8 +170,75 @@ func (e *oneClientSimulation) Run(config *sda.SimulationConfig) error {
 	}
 	log.Lvl2("Loading repository files - done")
 
+	lr, err := updateClient.LatestRelease("Debian-jessie-updates")
+	if err != nil {
+		log.Lvl1(err)
+		return nil
+	}
+
+	// Check signature on root
+
+	// Verify proofs for installed packages
+	round = monitor.NewTimeMeasure("verify_proofs")
+	/*for _, installed_package := range installed_packages {
+		p := lr.Packages[installed_package]
+		hash := []byte(p.Hash)
+		proof := p.Proof
+		log.Lvl1(proof.Check(HashFunc(), lr.RootID, hash))
+	}*/
+
+	for _, p := range lr.Packages {
+		hash := []byte(p.Hash)
+		proof := p.Proof
+		log.Lvl1(proof.Check(HashFunc(), lr.RootID, hash))
+	}
+	round.Record()
+
+	log.Lvl2(installed_packages_hashes[0])
+	log.Lvl2(installed_packages[0])
+
+	/*
+		release, err := updateClient.LatestRelease("Debian-jessie-updates")
+
+		repo := release.Repository
+		if repo == nil {
+			log.Lvl1("The repository contained in the release is nil")
+		}
+		root := release.RootID
+		if len(root) == 0 {
+			log.Lvl1("No root hash, has the Merkle-tree correctly been built ?")
+		}
+
+		// build the merkle-tree for packages
+		hashes := make([]crypto.HashID, len(repo.Packages))
+		for i, p := range repo.Packages {
+			hashes[i] = crypto.HashID(p.Hash)
+		}
+		possibleRoot, _ := crypto.ProofTree(HashFunc(), hashes)
+		if !bytes.Equal(possibleRoot, root) {
+			log.Lvl1("Wrong root hash")
+		}
+		for _, p := range release.Repository.Packages {
+			for _, proof := range release.Proofs {
+				if proof.Check(HashFunc(), release.RootID,
+					[]byte(p.Hash)) {
+					log.Lvl1("Proof is valid for", p.Name)
+				}
+			}
+			for i, installed_p := range installed_packages {
+				if p.Name == installed_p {
+					log.Lvl1("Checking updates for", p.Name)
+					if p.Hash != installed_packages_hashes[i] {
+						log.Lvl1(p.Name, "needs to be updated, updating it now.")
+					}
+				}
+			}
+
+		}
+	*/
+
 	// Get the latest repo Skipchain element
-	repoSCret, err := service.RepositorySC(nil, &RepositorySC{"Debian-stable"})
+	/*repoSCret, err := service.RepositorySC(nil, &RepositorySC{"stable-update"})
 	log.ErrFatal(err)
 	sc := repoSCret.(*RepositorySCRet).Last
 	log.Lvl2("latest block hash : ", sc.Hash)
@@ -156,14 +246,7 @@ func (e *oneClientSimulation) Run(config *sda.SimulationConfig) error {
 	// From now on all the packages are in the Skipchain and ready to receive
 	// requests by the clients.
 
-	log.Lvl2("The client has installed the following packages:", packages)
-	log.Lvl3("with hashes:", packages_hashes)
-
-	// We can verify the hash of the 2 packages (vim and golang)
-
-	//releases := make(map[string]*Release)
-	//updateClient := ...
 	//timeClient := timestamp.NewClient()
-
+	*/
 	return nil
 }

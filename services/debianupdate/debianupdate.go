@@ -69,7 +69,8 @@ func NewDebianUpdate(context *sda.Context, path string) sda.Service {
 	}
 
 	err := service.RegisterMessages(service.CreateRepository,
-		service.UpdateRepository, service.LatestBlocks)
+		service.UpdateRepository, service.LatestBlocks,
+		service.LatestBlockFromName, service.LatestBlock)
 	/*service.TimeStampProof,
 	service.LatestBlocks,
 	service.TimestampProofs)*/
@@ -402,6 +403,11 @@ func (service *DebianUpdate) RepositorySC(si *network.ServerIdentity,
 
 func (service *DebianUpdate) LatestBlock(si *network.ServerIdentity,
 	lb *LatestBlock) (network.Body, error) {
+
+	if service.Storage.Timestamp == nil {
+		return nil, errors.New("Timestamp-service missing!")
+	}
+
 	gucRet, err := service.skipchain.GetUpdateChain(service.Storage.Root,
 		lb.LastKnownSB)
 
@@ -409,11 +415,18 @@ func (service *DebianUpdate) LatestBlock(si *network.ServerIdentity,
 		return nil, err
 	}
 
-	if service.Storage.Timestamp == nil {
-		return nil, errors.New("Timestamp-service missing!")
-	}
-
 	return &LatestBlockRet{service.Storage.Timestamp, gucRet.Update}, nil
+}
+
+func (service *DebianUpdate) LatestBlockFromName(si *network.ServerIdentity,
+	lbr *LatestBlockRepo) (network.Body, error) {
+	repoName := lbr.RepoName
+
+	chain := service.Storage.RepositoryChain[repoName]
+	if chain == nil {
+		return nil, errors.New("skipchain not found for " + repoName)
+	}
+	return service.LatestBlock(nil, &LatestBlock{chain.Data.Hash})
 }
 
 func (service *DebianUpdate) LatestBlocks(si *network.ServerIdentity,

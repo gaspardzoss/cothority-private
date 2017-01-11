@@ -9,5 +9,5 @@ RunWait = 3600
 Hosts = 4
 Delay = 50
 
-Packages, PackagesLatestHash, Snapshots, Releases
-"vim golang", "790f9760b098c444ce42393a11ff463210e8488b1d775240a5c1a564bd569388 ee0f6ead2b1bb3f7b500afb51e5f57d51b39bde33ec2ffaa990d3aefb7ce69fe", "Packages_20150606T100444Z_small.gz Packages_20150905T033133Z_small.gz Packages_20160123T100707Z_small.gz Packages_20160402T041108Z_small.gz Packages_20160604T041011Z_small.gz Packages_20160917T042239Z_small.gz ", "Release_20150606T100444Z Release_20150905T033133Z Release_20160123T100707Z Release_20160402T041108Z Release_20160604T041011Z Release_20160917T042239Z"
+Packages, PackagesLatestHash, Snapshots
+"vim golang", "790f9760b098c444ce42393a11ff463210e8488b1d775240a5c1a564bd569388 ee0f6ead2b1bb3f7b500afb51e5f57d51b39bde33ec2ffaa990d3aefb7ce69fe", "stable-small"

@@ -67,8 +67,13 @@ func CopyDir(dir, snapshots string) error {
 		return err
 	}
 
+	err = os.RemoveAll(dir + "/" + snapshots + "/")
+	err = os.Mkdir(dir+"/"+snapshots+"/", 0777)
+	if err != nil {
+		return err
+	}
 	for _, file := range append(releases, packages...) {
-		dst := path.Join(dir, path.Base(file))
+		dst := path.Join(dir+"/"+snapshots+"/", path.Base(file))
 		if _, err := os.Stat(dst); err != nil {
 			err := config.Copy(dst,
 				"../services/debianupdate/script/"+snapshots+"/"+file)

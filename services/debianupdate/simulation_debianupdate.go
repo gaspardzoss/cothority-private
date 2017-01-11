@@ -80,11 +80,11 @@ func (e *createSimulation) Run(config *sda.SimulationConfig) error {
 	if err != nil {
 		return nil
 	}
-	snapshot_files, err := GetFileFromType(current_dir, "_Packages")
+	snapshot_files, err := GetFileFromType(current_dir+"/"+e.Snapshots, "Packages")
 	if err != nil {
 		return nil
 	}
-	release_files, err := GetFileFromType(current_dir, "_Release")
+	release_files, err := GetFileFromType(current_dir+"/"+e.Snapshots, "Release")
 	if err != nil {
 		return nil
 	}
@@ -103,7 +103,7 @@ func (e *createSimulation) Run(config *sda.SimulationConfig) error {
 
 		// Create a new repository structure (not a new skipchain..!)
 		repo, err := NewRepository(release_file, snapshot_files[i],
-			"https://snapshots.debian.org")
+			"https://snapshots.debian.org", e.Snapshots)
 		log.ErrFatal(err)
 		log.Lvl1("Repository created with", len(repo.Packages), "packages")
 
@@ -115,9 +115,12 @@ func (e *createSimulation) Run(config *sda.SimulationConfig) error {
 
 		// Compute the root and the proofs
 		root, proofs := crypto.ProofTree(HashFunc(), hashes)
-
+		lengths := []int64{}
+		for _, proof := range proofs {
+			lengths = append(lengths, int64(len(proof)))
+		}
 		// Store the repo, root and proofs in a release
-		release := &Release{repo, root, proofs}
+		release := &Release{repo, root, proofs, lengths}
 
 		// check if the skipchain has already been created for this repo
 		sc, knownRepo := repos[repo.GetName()]

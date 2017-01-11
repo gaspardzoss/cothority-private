@@ -22,6 +22,10 @@ func init() {
 		LatestBlocksRet{},
 		LatestBlocksRetInternal{},
 		TimestampRets{},
+		LatestBlockRepo{},
+		LatestBlockRet{},
+		LatestRelease{},
+		PackageProof{},
 	} {
 		network.RegisterPacketType(msg)
 	}
@@ -31,9 +35,10 @@ type ProjectID uuid.UUID
 
 // Release is a Debian Repository and the developers' signatures
 type Release struct {
-	Repository *Repository
-	RootID     crypto.HashID
-	Proofs     []crypto.Proof
+	Repository   *Repository
+	RootID       crypto.HashID
+	Proofs       []crypto.Proof
+	ProofsLength []int64
 }
 
 type RepositoryChain struct {
@@ -91,6 +96,10 @@ type LatestBlocks struct {
 	LastKnownSBs []skipchain.SkipBlockID
 }
 
+type LatestBlockRepo struct {
+	RepoName string
+}
+
 // Returns the timestamp of the latest skipblock, together with an eventual
 // shortes-link of skipblocks needed to go from the LastKnownSB to the
 // current skipblock.
@@ -137,4 +146,14 @@ type TimestampRet struct {
 // repositories names.
 type TimestampRets struct {
 	Proofs map[string]crypto.Proof
+}
+
+type PackageProof struct {
+	Hash  string
+	Proof crypto.Proof
+}
+
+type LatestRelease struct {
+	RootID   crypto.HashID
+	Packages map[string]PackageProof
 }
