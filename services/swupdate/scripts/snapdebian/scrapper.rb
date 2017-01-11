@@ -5,7 +5,7 @@ require 'mechanize'
 # SNAPSHOT_URL / <timestamp> / PATH / {BINARY_PATH,SOURCE_PATH}
 SNAPSHOT_URL = "http://snapshot.debian.org/archive/debian/"
 #PATH = "dists/testing/main/"
-PATH = "dists/stable-updates/main/"
+PATH = "dists/testing/main/"
 BINARY_PATH = "binary-amd64/Packages.gz"
 SOURCE_PATH = "source/Sources.gz"
 RELEASE_PATH = "binary-amd64/Release"
