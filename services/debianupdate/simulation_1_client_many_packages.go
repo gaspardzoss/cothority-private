@@ -177,12 +177,20 @@ func (e *oneClientSimulation) Run(config *sda.SimulationConfig) error {
 
 	// Check signature on root
 
+	verify_sig := monitor.NewTimeMeasure("verify_signature")
+	log.Lvl1("Verifying root signature")
+	if err := lr.Update[0].VerifySignatures(); err != nil {
+		log.Lvl1("Failed verification of root's signature")
+		return err
+	}
+	verify_sig.Record()
+
 	// Verify proofs for installed packages
 	round = monitor.NewTimeMeasure("verify_proofs")
 
 	// take e.NumberOfInstalledPackages randomly insteand of the first
 
-	log.Lvl1("Verifiying at most", e.NumberOfInstalledPackages, "packages")
+	log.Lvl1("Verifying at most", e.NumberOfInstalledPackages, "packages")
 	i := 1
 	for name, p := range lr.Packages {
 		hash := []byte(p.Hash)

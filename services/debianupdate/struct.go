@@ -156,4 +156,5 @@ type PackageProof struct {
 type LatestRelease struct {
 	RootID   crypto.HashID
 	Packages map[string]PackageProof
+	Update   []*skipchain.SkipBlock
 }
