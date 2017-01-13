@@ -18,9 +18,10 @@ func init() {
 
 type createSimulation struct {
 	sda.SimulationBFTree
-	Base      int
-	Height    int
-	Snapshots string // All the snapshots filenames
+	Base                   int
+	Height                 int
+	NumberOfPackagesInRepo int
+	Snapshots              string // All the snapshots filenames
 }
 
 // NewCreateSimulation returns the new simulation where all fields are
@@ -103,7 +104,7 @@ func (e *createSimulation) Run(config *sda.SimulationConfig) error {
 
 		// Create a new repository structure (not a new skipchain..!)
 		repo, err := NewRepository(release_file, snapshot_files[i],
-			"https://snapshots.debian.org", e.Snapshots)
+			"https://snapshots.debian.org", e.Snapshots, e.NumberOfPackagesInRepo)
 		log.ErrFatal(err)
 		log.Lvl1("Repository created with", len(repo.Packages), "packages")
 

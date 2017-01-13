@@ -1,9 +1,8 @@
 package debianupdate
 
 import (
-	"github.com/BurntSushi/toml"
-
 	"errors"
+	"github.com/BurntSushi/toml"
 	"github.com/dedis/cothority/crypto"
 	"github.com/dedis/cothority/log"
 	"github.com/dedis/cothority/monitor"
@@ -23,6 +22,7 @@ type oneClientSimulation struct {
 	Base                      int
 	Height                    int
 	NumberOfInstalledPackages int
+	NumberOfPackagesInRepo    int
 	Snapshots                 string // All the snapshots filenames
 }
 
@@ -55,7 +55,6 @@ func (e *oneClientSimulation) Setup(dir string, hosts []string) (
 }
 
 func (e *oneClientSimulation) Run(config *sda.SimulationConfig) error {
-
 	// The cothority configuration
 	size := config.Tree.Size()
 	log.Lvl2("Size is:", size, "rounds:", e.Rounds)
@@ -105,7 +104,7 @@ func (e *oneClientSimulation) Run(config *sda.SimulationConfig) error {
 
 		// Create a new repository structure (not a new skipchain..!)
 		repo, err := NewRepository(release_file, snapshot_files[i],
-			"https://snapshots.debian.org", e.Snapshots)
+			"https://snapshots.debian.org", e.Snapshots, e.NumberOfPackagesInRepo)
 		log.ErrFatal(err)
 		log.Lvl1("Repository created with", len(repo.Packages), "packages")
 
@@ -128,7 +127,7 @@ func (e *oneClientSimulation) Run(config *sda.SimulationConfig) error {
 		sc, knownRepo := repos[repo.GetName()]
 
 		if knownRepo {
-			round = monitor.NewTimeMeasure("add_to_skipchain")
+			//round = monitor.NewTimeMeasure("add_to_skipchain")
 
 			log.Lvl1("A skipchain for", repo.GetName(), "already exists",
 				"trying to add the release to the skipchain.")
@@ -149,7 +148,7 @@ func (e *oneClientSimulation) Run(config *sda.SimulationConfig) error {
 				releases[repo.GetName()] = release
 			}
 		} else {
-			round = monitor.NewTimeMeasure("create_skipchain")
+			//round = monitor.NewTimeMeasure("create_skipchain")
 
 			log.Lvl2("Creating a new skipchain for", repo.GetName())
 
@@ -163,15 +162,18 @@ func (e *oneClientSimulation) Run(config *sda.SimulationConfig) error {
 			repos[repo.GetName()] = cr.(*CreateRepositoryRet).RepositoryChain
 			releases[repo.GetName()] = release
 		}
-		round.Record()
 	}
 	log.Lvl2("Loading repository files - done")
 
-	lr, err := updateClient.LatestRelease("Debian-jessie-updates")
+	latest_release_update := monitor.NewTimeMeasure("client_receive_latest_release")
+	bw_update := monitor.NewCounterIOMeasure("client_bw_debianupdate", updateClient)
+	lr, err := updateClient.LatestRelease(e.Snapshots)
 	if err != nil {
 		log.Lvl1(err)
 		return nil
 	}
+	bw_update.Record()
+	latest_release_update.Record()
 
 	// Check signature on root
 
@@ -197,56 +199,5 @@ func (e *oneClientSimulation) Run(config *sda.SimulationConfig) error {
 	}
 	round.Record()
 
-	/*
-		release, err := updateClient.LatestRelease("Debian-jessie-updates")
-
-		repo := release.Repository
-		if repo == nil {
-			log.Lvl1("The repository contained in the release is nil")
-		}
-		root := release.RootID
-		if len(root) == 0 {
-			log.Lvl1("No root hash, has the Merkle-tree correctly been built ?")
-		}
-
-		// build the merkle-tree for packages
-		hashes := make([]crypto.HashID, len(repo.Packages))
-		for i, p := range repo.Packages {
-			hashes[i] = crypto.HashID(p.Hash)
-		}
-		possibleRoot, _ := crypto.ProofTree(HashFunc(), hashes)
-		if !bytes.Equal(possibleRoot, root) {
-			log.Lvl1("Wrong root hash")
-		}
-		for _, p := range release.Repository.Packages {
-			for _, proof := range release.Proofs {
-				if proof.Check(HashFunc(), release.RootID,
-					[]byte(p.Hash)) {
-					log.Lvl1("Proof is valid for", p.Name)
-				}
-			}
-			for i, installed_p := range installed_packages {
-				if p.Name == installed_p {
-					log.Lvl1("Checking updates for", p.Name)
-					if p.Hash != installed_packages_hashes[i] {
-						log.Lvl1(p.Name, "needs to be updated, updating it now.")
-					}
-				}
-			}
-
-		}
-	*/
-
-	// Get the latest repo Skipchain element
-	/*repoSCret, err := service.RepositorySC(nil, &RepositorySC{"stable-update"})
-	log.ErrFatal(err)
-	sc := repoSCret.(*RepositorySCRet).Last
-	log.Lvl2("latest block hash : ", sc.Hash)
-
-	// From now on all the packages are in the Skipchain and ready to receive
-	// requests by the clients.
-
-	//timeClient := timestamp.NewClient()
-	*/
 	return nil
 }

@@ -94,6 +94,12 @@ func (c *Client) LatestRelease(repo string) (*LatestRelease, error) {
 	lengths := release.ProofsLength
 	packages := release.Repository.Packages
 
+	// verify the signature here (not ideal, maybe we could move that to the
+	// simulation. that's a question of design choice..).
+	if err := lbr.Update[0].VerifySignatures(); err != nil {
+		return nil, err
+	}
+
 	packageProofHash := map[string]PackageProof{}
 
 	log.Lvl2("preparing the datas")

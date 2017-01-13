@@ -11,7 +11,7 @@ import (
 
 	"github.com/dedis/cothority/crypto"
 	"github.com/dedis/cothority/log"
-	"github.com/dedis/cothority/monitor"
+	//"github.com/dedis/cothority/monitor"
 	"github.com/dedis/cothority/network"
 	"github.com/dedis/cothority/protocols/manage"
 	"github.com/dedis/cothority/protocols/swupdate"
@@ -153,7 +153,7 @@ func (service *DebianUpdate) PropagateSkipBlock(msg network.Body) {
 // skipchains, run a timestamp protocol and store the results in
 // service.latestTimestamps.
 func (service *DebianUpdate) timestamp(time time.Time) {
-	measure := monitor.NewTimeMeasure("debianupdate_timestamp")
+	//measure := monitor.NewTimeMeasure("debianupdate_timestamp")
 	// order all packets and marshal them
 	ids := service.orderedLatestSkipblocksID()
 	// create merkle tree + proofs and the final message
@@ -164,7 +164,7 @@ func (service *DebianUpdate) timestamp(time time.Time) {
 	// TODO XXX Here in a non-academical world we should test if the
 	// signature contains enough participants.
 	service.updateTimestampInfo(root, proofs, time.Unix(), signature)
-	measure.Record()
+	//measure.Record()
 }
 
 func (service *DebianUpdate) cosiSign(msg []byte) []byte {
@@ -279,8 +279,8 @@ func (service *DebianUpdate) getOrderedRepositoryNames() []string {
 
 func (service *DebianUpdate) UpdateRepository(si *network.ServerIdentity,
 	ur *UpdateRepository) (network.Body, error) {
-	addBlock := monitor.NewTimeMeasure("add_block")
-	defer addBlock.Record()
+	//addBlock := monitor.NewTimeMeasure("add_block")
+	//defer addBlock.Record()
 
 	repoChain := &RepositoryChain{
 		Release: ur.Release,
@@ -361,7 +361,7 @@ func verifierFunc(msg, data []byte) bool {
 		log.Lvl2("No root hash, has the Merkle-tree correctly been built ?")
 		return false
 	}
-	ver := monitor.NewTimeMeasure("verification")
+	//ver := monitor.NewTimeMeasure("verification")
 
 	// build the merkle-tree for packages
 	hashes := make([]crypto.HashID, len(repo.Packages))
@@ -374,7 +374,7 @@ func verifierFunc(msg, data []byte) bool {
 		log.Lvl2("Wrong root hash")
 		return false
 	}
-	ver.Record()
+	//ver.Record()
 	return true
 }
 

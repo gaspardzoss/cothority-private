@@ -9,7 +9,7 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"sync"
+	//"sync"
 )
 
 /*
@@ -22,13 +22,13 @@ type Repository struct {
 	Version   string
 	Packages  PackageSlice
 	SourceUrl string
-	sync.Mutex
+	//sync.Mutex
 }
 
 // NewRepository create a new repository from a release file, a packages file
 // a keys file and a source url
 func NewRepository(releaseFile string, packagesFile string,
-	sourceUrl string, dir string) (*Repository, error) {
+	sourceUrl string, dir string, maxPackages int) (*Repository, error) {
 
 	release, err := ioutil.ReadFile(dir + "/" + releaseFile)
 	log.ErrFatal(err)
@@ -61,7 +61,12 @@ func NewRepository(releaseFile string, packagesFile string,
 
 	packageString := ""
 
+	// only import the maxPackages first packages
+	i := 0
 	for scanner.Scan() {
+		if i >= maxPackages {
+			break
+		}
 		line := scanner.Text()
 
 		if line != " " && line != "" && line != "\n" {
@@ -70,7 +75,9 @@ func NewRepository(releaseFile string, packagesFile string,
 			// TODO go repository.AddPackage(packageString) with chan instead of mutex
 			repository.AddPackage(packageString)
 			packageString = ""
+			i = i + 1
 		}
+
 	}
 
 	if len(packageString) != 0 {
@@ -88,8 +95,8 @@ func NewRepository(releaseFile string, packagesFile string,
 }
 
 func (r *Repository) AddPackage(packageString string) {
-	r.Lock()
-	defer r.Unlock()
+	//r.Lock()
+	//defer r.Unlock()
 	p, err := NewPackage(packageString)
 	log.ErrFatal(err)
 	r.Packages = append(r.Packages, p)
