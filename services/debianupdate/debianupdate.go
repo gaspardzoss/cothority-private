@@ -11,7 +11,7 @@ import (
 
 	"github.com/dedis/cothority/crypto"
 	"github.com/dedis/cothority/log"
-	//"github.com/dedis/cothority/monitor"
+	"github.com/dedis/cothority/monitor"
 	"github.com/dedis/cothority/network"
 	"github.com/dedis/cothority/protocols/manage"
 	"github.com/dedis/cothority/protocols/swupdate"
@@ -178,6 +178,9 @@ func (service *DebianUpdate) cosiSign(msg []byte) []byte {
 	}
 	service.RegisterProtocolInstance(pi)
 
+	// measure the time the cothority takes to sign the root
+	measure := monitor.NewTimeMeasure("cothority_signing")
+
 	pi.SigningMessage(msg)
 	// Take the raw message (already expecting a hash for the timestamp service)
 	response := make(chan []byte)
@@ -188,6 +191,7 @@ func (service *DebianUpdate) cosiSign(msg []byte) []byte {
 	go pi.Start()
 	log.Lvl2("Waiting on cosi response ...")
 	res := <-response
+	measure.Record()
 	log.Lvl2("... DONE: Recieved cosi response")
 	return res
 }
@@ -202,8 +206,11 @@ func (service *DebianUpdate) cosiVerify(msg []byte) bool {
 	// check merkle tree root
 	// order all packets and marshal them
 	ids := service.orderedLatestSkipblocksID()
+
 	// create merkle tree + proofs and the final message
+
 	root, _ := crypto.ProofTree(HashFunc(), ids)
+
 	// root of merkle tree is not secret, no need to use constant time.
 	if !bytes.Equal(root, signedRoot) {
 		log.Lvl2("Root of merkle root does not match")
@@ -361,6 +368,7 @@ func verifierFunc(msg, data []byte) bool {
 		log.Lvl2("No root hash, has the Merkle-tree correctly been built ?")
 		return false
 	}
+
 	//ver := monitor.NewTimeMeasure("verification")
 
 	// build the merkle-tree for packages
@@ -368,13 +376,19 @@ func verifierFunc(msg, data []byte) bool {
 	for i, p := range repo.Packages {
 		hashes[i] = crypto.HashID(p.Hash)
 	}
+
+	// measure the time the cothority takes to verify the merkle tree
+	measure := monitor.NewTimeMeasure("cothority_verify_proofs")
+
 	possibleRoot, _ := crypto.ProofTree(HashFunc(), hashes)
 
 	if !bytes.Equal(possibleRoot, root) {
 		log.Lvl2("Wrong root hash")
 		return false
 	}
-	//ver.Record()
+
+	measure.Record()
+
 	return true
 }
 
